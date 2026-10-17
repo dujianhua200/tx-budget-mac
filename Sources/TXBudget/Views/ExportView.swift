@@ -1,8 +1,10 @@
 #if os(macOS)
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 /// 报表导出：左树勾选 11 张表，默认全选，选择存 settings.exportSelection。
-/// 导出 xlsx 本身是阶段 4；本阶段只做勾选界面 + 选择持久化，导出按钮先置灰并说明。
+/// 导出按钮经 NSSavePanel 选路径，调用 PrintExport 生成 xlsx（版式与 2024 结算书一致）。
 struct ExportView: View {
     @EnvironmentObject private var appState: AppState
     var project: ProjectRecord
@@ -32,17 +34,43 @@ struct ExportView: View {
                     if let result = appState.calcResult(for: project) {
                         Text("总计（含税）\(money(result.table1.grandIncl)) 元")
                     }
-                    Text("导出 xlsx 在阶段 4 实现（本阶段只做勾选界面 + 选择持久化）。")
+                    Text("导出 xlsx（版式与 2024 结算书一致，数值由计算引擎生成）。")
                         .foregroundColor(.secondary).font(.caption)
                 }
             }
             Button("导出勾选的表（\(appState.exportSelection.count) 张）") {
-                appState.showToast("导出 xlsx 在阶段 4 实现")
+                exportTapped()
             }
             .buttonStyle(.borderedProminent)
-            .disabled(true)
+            .disabled(appState.exportSelection.isEmpty)
             if appState.exportSelection.isEmpty {
                 Text("至少勾选 1 张表。").foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private func exportTapped() {
+        guard let result = appState.calcResult(for: project) else {
+            appState.showToast("计算失败，无法导出")
+            return
+        }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [UTType(filenameExtension: "xlsx")].compactMap { $0 }
+        panel.nameFieldStringValue = "\(project.name)-预算书.xlsx"
+        panel.canCreateDirectories = true
+        panel.begin { response in
+            Task { @MainActor in
+                guard response == .OK, let url = panel.url else { return }
+                do {
+                    try exportBudgetBook(
+                        to: url, projectName: project.name,
+                        project: project.toEngineProject(), result: result,
+                        profile: appState.projectProfile,
+                        include: Set(appState.exportSelection))
+                    appState.showToast("已导出 \(url.lastPathComponent)")
+                } catch {
+                    appState.showToast("导出失败：\(error.localizedDescription)")
+                }
             }
         }
     }

@@ -82,6 +82,8 @@ Discount.swift // DEFAULT_*_KEYS / DISCOUNT_LINE_DEFS / applyDiscount / renderMe
 Calc.swift // calcProject（全部公式链 + calcTable5 + surveyFeeFor）
 Logic/ // 纯逻辑（对应 Electron src/lib/v3.js，可单测）
 FeeTree.swift // FEE_TREE / feeLeavesOf / feeRowsForNode / FEE_RATE_FIELD / feeBasisText
+LibraryColumn.swift // LibraryColumn / LibraryColumnKind（库表列定义，Logic 层；Views 只引用，不得移回 Views）
+LibraryRowCodec.swift // 库表行编解码（依赖 LibraryColumn）
 Table5View.swift // table5Formula / buildTable5ViewRows
 ExportSelection.swift // SHEET_NAMES / EXPORT_GROUPS / resolve/toggle
 SaveStatus.swift // 保存状态机
@@ -89,7 +91,7 @@ ProjectHelpers.swift // sortProjectsRecent / discountOption / applyDiscountOptio
 Persistence/
 DatabaseStore.swift // 文件读写：原子写（tmp + fsync + rename）+ 滚动备份（见 §7）+ savePatch
 Export/
-XlsxWriter.swift // xlsx ZIP + XML 直写（无第三方库）：共享字符串 / 样式 / 工作表 / 合并 / 页边距 / 页面设置
+XlsxWriter.swift // xlsx ZIP + XML 直写（无第三方库）：inlineStr 文本 / 样式 / 工作表 / 合并 / 页边距 / 页面设置
 LayoutSpec.swift // 版式常量（由 Electron reference-layout.json 搬运，见 §6）
 PrintExport.swift // 11 张表逐表生成（对照 Electron printExport.cjs + printLayout.cjs）
 Views/
@@ -110,6 +112,7 @@ EngineTests.swift / DiscountTests.swift / RatesTests.swift
 Table5Tests.swift / FeeTreeTests.swift / ExportSelectionTests.swift
 SaveStatusTests.swift / ProjectInfoTests.swift / LayoutCompareTests.swift
 XlsxWriterTests.swift / PersistenceTests.swift
+PrintExportTests.swift / XlsxTestReader.swift / ReferenceBookFixture.swift
 ```
 
 - 规则：Engine/Logic 不依赖 SwiftUI（纯逻辑，可单测）；Views 只消费 Engine/Logic/Persistence 的函数。单个视图文件禁止 500+ 行（Electron v3.0 教训），工作量五标签拆独立视图。
@@ -155,13 +158,13 @@ XlsxWriterTests.swift / PersistenceTests.swift
 
 ## 6. xlsx 导出（和结算书一模一样，不引第三方库，直接写 ZIP + XML）
 
-- 实现：`XlsxWriter.swift`（ZIP + XML 直写：`[Content_Types].xml` / `_rels/.rels` / `xl/workbook.xml` / `xl/_rels/workbook.xml.rels` / `xl/styles.xml` / `xl/sharedStrings.xml` / `xl/worksheets/sheetN.xml`）。ZIP 用 `Compression` 框架（`compression_encode_buffer`，zlib/deflate）或手写 stored（不压缩）条目——**优先手写 stored 条目**（零依赖、最易验证正确；文件稍大可接受）。CRC32 按 IEEE 多项式实现并单测。
+- 实现：`XlsxWriter.swift`（ZIP + XML 直写：`[Content_Types].xml` / `_rels/.rels` / `xl/workbook.xml` / `xl/_rels/workbook.xml.rels` / `xl/styles.xml` / `xl/worksheets/sheetN.xml`）。文本用 inlineStr（无 `sharedStrings.xml`）。ZIP 用 `Compression` 框架（`compression_encode_buffer`，zlib/deflate）或手写 stored（不压缩）条目——**优先手写 stored 条目**（零依赖、最易验证正确；文件稍大可接受）。CRC32 按 IEEE 多项式实现并单测。
 - 版式规格：以 Electron `docs/print-layout-spec.md` + `tests/fixtures/reference-layout.json` 为准（列宽 / 行高 / 合并 / 字体 / 页边距 / 页面设置）。**注意 §13.6 的 13 处列宽修正已包含在 fixture 中**（汇总表 E/F/H、表一 E、表三甲 E/H、表三乙 H、表三丙 H/J、表四甲 F、表五甲 F/G）；移植时以 fixture 数值为准，不许用旧的默认填充值 9.13671875。另有表五表头合并区 `C3:D4`（与参考一致）。
 - 全局版式：A4（paperSize 9）、横向、缩放 100%、`fitToPage` 关闭；无打印区域 / 无重复标题行 / 无 Excel 页眉页脚（表头、表尾、页码全部是单元格内文本）；标题行 18pt 加粗居中（封面 36pt）；信息行 9pt；表尾 10pt；数据行高 16.55pt 为主；边框：表头行上下 medium，数据行 thin；页码为单元格内文字 `第X页 共Y页`，逐页生成；表尾在固定行，数据区与表尾之间用空白行填充；唯一手动分页符在表三甲第 29 行之后。
 - 措辞：与结算书逐字一致，含折行位置：`不需要安装\n的设备、工\n器具费`、`危险作业意外伤害保险\n费`、`需要安装\n的设备费`、`建筑安装\n工程费`。标题用“预算”口径字样（不照抄参考文件的“结算”字样）。
 - 字体：各表表名标题 + 编制说明 → **Noto Sans CJK SC**；其余宋体/黑体照旧（数据 宋体 10、表尾 宋体 10、封面 宋体 36 bold 等）。数值单元格写数值型（不许写文本型字符串）。
 - 逐表生成：对照 Electron `electron/printExport.cjs` + `electron/printLayout.cjs` 逐表搬运（11 张表：封面 / 编制说明 / 汇总表 / 表一 / 表二折后 / 表二折前 / 表三甲 / 表三乙 / 表三丙 / 表四甲 / 表五甲）。表二双表版式一致，仅“依据和计算方法”列与数值不同；折后表计算方法列体现打折关系（`技工总工日X114X37.9%`、`人工费X1.5%/37.9%`、`(1-4之和)/37.9%`）。
-- 测试：`LayoutCompareTests`（逐项比对版式 fixture：列宽 / 行高 / 字体 / 合并 / 页边距，差一处即失败）+ `XlsxWriterTests`（ZIP 结构、CRC32、sharedStrings、样式）+ LibreOffice 往返 0 不一致（CI 中用 `libreoffice --headless --convert-to xlsx` 重算比对，或至少验证文件可被 LibreOffice 打开且单元格值一致）。
+- 测试：`LayoutCompareTests`（逐项比对版式 fixture：列宽 / 行高 / 字体 / 合并 / 页边距，差一处即失败）+ `XlsxWriterTests`（ZIP 结构、CRC32、inlineStr 转义、样式去重）+ `PrintExportTests`（逐表值断言 + 子集导出 + 有 profile 时重分组）+ LibreOffice 往返 0 不一致（**本地手动验**：CI 的 macOS runner 无 LibreOffice，CI 内用解包数值断言替代）。
 
 ## 7. 持久化（与 Electron 同一文件，互通）
 
@@ -186,10 +189,9 @@ XlsxWriterTests.swift / PersistenceTests.swift
 |---|---|---|
 | 1 | 架构（本文档）+ 仓库 + CI 骨架 | 本文档合并；CI 推送触发通过（骨架编译 + 占位测试） |
 | 2 | 计算引擎移植（Engine + Logic）+ Swift 测试 | 引擎测试全过，含 §3.1 锚点；与 Electron 测试期望值逐项对齐 |
-| 3 | 数据模型（Codable）+ 持久化 | 能读写 Electron v2/v3 真实数据文件（用 Electron 测试夹具验证）；原子写 + 备份单测 |
-| 4 | SwiftUI 界面 | CI 编译通过；用户真机点按走查（侧边栏、保存、配置方案、工作量五标签、导出勾选） |
-| 5 | xlsx 导出 | 布局对比测试全过；LibreOffice 往返 0 不一致；导出与结算书逐项对齐 |
-| 6 | 发布 v1.0.0 | tag → CI → Release 资产核实 |
+| 3 | 数据模型（Codable）+ 持久化 + SwiftUI 界面 | 能读写 Electron v2/v3 真实数据文件（用 Electron 测试夹具验证）；原子写 + 备份单测；CI 编译通过；用户真机点按走查（侧边栏、保存、配置方案、工作量五标签、导出勾选） |
+| 4 | xlsx 导出 + `LibraryColumn` 结构小修 | 布局对比测试全过；LibreOffice 往返 0 不一致（本地手动验）；导出与结算书逐项对齐；`LibraryColumn` / `LibraryColumnKind` 移入 Logic，Views 只留引用 |
+| 5 | 发布 v1.0.0 | tag → CI → Release 资产核实 |
 
 - 每个阶段交付时附：改了什么、测试通过数、提交 SHA、CI 状态。最终汇报同前。
 - **实机点按走查由用户做**（CI 验的是能编过 + 逻辑/导出正确；界面长什么样、点按顺不顺仍需用户真机验收——如实说明，不许声称本地验过界面）。
