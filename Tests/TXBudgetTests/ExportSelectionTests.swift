@@ -15,10 +15,11 @@ final class ExportSelectionTests: XCTestCase {
         XCTAssertEqual(resolveExportSelection(s), sheetNames)
     }
 
-    func testResolveFiltersUnknownAndDedupes() {
+    func testResolveFiltersUnknownKeepsOrderAndDuplicates() {
+        // 只过滤不在 11 张表内的条目；保持原顺序，不去重（与实现一致）。
         var s = SettingsRecord()
         s.exportSelection = ["工程总表(表一)", "不存在的表", "工程总表(表一)", "建设项目总算表(汇总表)"]
-        XCTAssertEqual(resolveExportSelection(s), ["建设项目总算表(汇总表)", "工程总表(表一)"])
+        XCTAssertEqual(resolveExportSelection(s), ["工程总表(表一)", "工程总表(表一)", "建设项目总算表(汇总表)"])
     }
 
     func testToggleSheet() {
