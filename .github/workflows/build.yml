@@ -35,10 +35,14 @@ jobs:
           export VERSION="${SAFE_BRANCH}-${SHORT_SHA:0:7}"
           bash ./scripts/bundle.sh
 
+      - name: Compute safe artifact name
+        id: artname
+        run: echo "name=tx-budget-mac-arm64-$(echo "${GITHUB_REF_NAME}" | tr '/' '-' | tr ' ' '-')" >> "$GITHUB_OUTPUT"
+
       - name: Upload Mac M-Silicon DMG Artifact (No Release published)
         uses: actions/upload-artifact@v4
         with:
-          name: tx-budget-mac-arm64-${{ github.ref_name }}
+          name: ${{ steps.artname.outputs.name }}
           path: build/*.dmg
           if-no-files-found: error
           retention-days: 30
