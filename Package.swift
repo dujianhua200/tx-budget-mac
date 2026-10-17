@@ -9,6 +9,7 @@ let package = Package(
     ],
     targets: [
         .executableTarget(name: "TXBudget", path: "Sources/TXBudget"),
-        .testTarget(name: "TXBudgetTests", dependencies: ["TXBudget"], path: "Tests/TXBudgetTests"),
+        .testTarget(name: "TXBudgetTests", dependencies: ["TXBudget"], path: "Tests/TXBudgetTests",
+                    resources: [.copy("Fixtures")]),
     ]
 )
