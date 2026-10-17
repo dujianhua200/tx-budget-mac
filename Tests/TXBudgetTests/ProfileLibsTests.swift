@@ -33,7 +33,8 @@ final class ProfileLibsTests: XCTestCase {
         XCTAssertEqual(libs.rules.count, 1)
         XCTAssertEqual(libs.rules.first?.consumption, 10)
         XCTAssertEqual(libs.machinePrices.first?.price, 100)
-        XCTAssertEqual(libs.instrumentPrices.first?.name, "OTDR")
+        XCTAssertEqual(libs.instrumentPrices.first?.code, "YB-01")
+        XCTAssertEqual(libs.instrumentPrices.first?.price, 80)
         // rateGrid 兼容垫片不再需要：引擎直接读具名 rates。
         XCTAssertNil(libs.rateGrid)
     }
