@@ -111,8 +111,15 @@ struct ProjectsView: View {
     }
 
     private func exportSelected() {
-        // 批量导出 xlsx 在阶段 4 实现（导出勾选见“报表导出”）。
-        appState.showToast("批量导出 xlsx 在阶段 4 实现")
+        guard let dir = FilePanel.openDirectory(message: "选择批量导出预算书的保存目录") else { return }
+        let projects = appState.db.projects.filter { selected.contains($0.id) }
+        let result = appState.batchExportProjects(projects, to: dir)
+        if result.failures.isEmpty {
+            appState.showToast("已批量导出 \(result.succeeded) 个工程到 \(dir.path)")
+        } else {
+            let names = result.failures.map { $0.0 }.joined(separator: "、")
+            appState.showToast("已导出 \(result.succeeded) 个，失败 \(result.failures.count) 个（\(names)）")
+        }
     }
 }
 #endif

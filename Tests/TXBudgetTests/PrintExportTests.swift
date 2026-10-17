@@ -253,11 +253,12 @@ final class PrintExportTests: XCTestCase {
         let book = exportedBook(profile: testProfile(), project: testProject(), result: fixture.result)
         let sheet = book.sheet(named: "工程量表(表三)甲")
         XCTAssertEqual(sheet?.text("B6"), "TXL1-001")
-        XCTAssertEqual(sheet?.text("C6"), "光(电)缆工程施工测量 架空")
+        // A1：variant 是完整变体项目名称，非空时直接用 variant，不拼接定额库名。
+        XCTAssertEqual(sheet?.text("C6"), "架空")
         XCTAssertEqual(sheet?.number("F6"), 15, "同变体合并（10+5），系数 0 行跳过")
         XCTAssertEqual(sheet?.number("I6"), 7.5)
         XCTAssertEqual(sheet?.number("J6"), 3.75)
-        XCTAssertEqual(sheet?.text("C7"), "光(电)缆工程施工测量 直埋")
+        XCTAssertEqual(sheet?.text("C7"), "直埋")
         XCTAssertEqual(sheet?.number("F7"), 20)
         XCTAssertEqual(sheet?.number("I7"), 10)
         XCTAssertEqual(sheet?.text("B8"), "UNKNOWN-001", "孤儿行保留")
@@ -267,6 +268,61 @@ final class PrintExportTests: XCTestCase {
         XCTAssertEqual(sheet?.text("B9"), "不取费")
         XCTAssertEqual(sheet?.text("C9"), "测试项")
         XCTAssertEqual(sheet?.number("F9"), 3)
+    }
+
+    // MARK: - A1：真实变体名称（对照 2024 结算书）
+
+    /// TXL3-187（定额库名“…平原 36 芯以下”）+ variant“…平原 6芯” → C6 恰为 variant，不重复。
+    /// TXL3-192 三变体 → 拆 3 行，C 列各为 variant 本身。
+    /// TXL1-002（定额库名“光（电）缆工程施工测量 架空”）+ variant“光(电)缆工程施工测量 架空”
+    /// → C 列为 variant；表三丙 quotaName 同样为 variant（equipRows 共用 displayName）。
+    func testDisplayNameRealVariants() {
+        let fixture = ReferenceBookFixture.loadBook()
+        var info = ProjectInfo()
+        info.建设项目名称 = "测试项目"
+        info.单项工程名称 = "通信线路工程"
+        info.建设单位 = "测试建设单位"
+        info.表格编号 = "测试-"
+        info.编制日期 = "2026-05-13"
+        let project = Project(info: info, quantities: [
+            QuantityRow(quota: "TXL3-187", variant: "挂钩法架设架空光缆 平原 6芯", qty: 2, coef: 1),
+            QuantityRow(quota: "TXL3-192", variant: "挂钩法架设架空光缆 丘陵、城区、水田 6芯", qty: 3, coef: 1),
+            QuantityRow(quota: "TXL3-192", variant: "挂钩法架设架空光缆 丘陵、城区、水田 12芯", qty: 1, coef: 1),
+            QuantityRow(quota: "TXL3-192", variant: "挂钩法架设架空光缆 丘陵、城区、水田 24芯", qty: 1, coef: 1),
+            QuantityRow(quota: "TXL1-002", variant: "光(电)缆工程施工测量 架空", qty: 10, coef: 1),
+        ])
+        let quotas = [
+            QuotaRow(code: "TXL3-187", name: "挂钩法架设架空光缆 平原 36 芯以下", unit: "千米条",
+                     tech: 6.31, labor: 5.13),
+            QuotaRow(code: "TXL3-192", name: "挂钩法架设架空光缆 丘陵、城区、水田 36 芯以下", unit: "千米条",
+                     tech: 8.68, labor: 6.86),
+            QuotaRow(code: "TXL1-002", name: "光（电）缆工程施工测量 架空", unit: "百米",
+                     tech: 0.46, labor: 0.12),
+        ]
+        let profile = ConfigurationProfile(libraries: LibrarySet(
+            quotas: quotas,
+            instrumentPrices: [InstrumentPriceRow(code: "TXY001", name: "激光测距仪", unit: "台班", price: 119)],
+            quotaInstruments: [QuotaInstrumentRow(quota: "TXL1-002", mcode: "TXY001",
+                                                  mname: "激光测距仪", unit: "台班", qty: 0.05)]))
+        let book = exportedBook(profile: profile, project: project, result: fixture.result)
+        let sheet = book.sheet(named: "工程量表(表三)甲")
+        XCTAssertEqual(sheet?.text("B6"), "TXL3-187")
+        XCTAssertEqual(sheet?.text("C6"), "挂钩法架设架空光缆 平原 6芯")
+        XCTAssertEqual(sheet?.text("B7"), "TXL3-192")
+        XCTAssertEqual(sheet?.text("C7"), "挂钩法架设架空光缆 丘陵、城区、水田 6芯")
+        XCTAssertEqual(sheet?.text("C8"), "挂钩法架设架空光缆 丘陵、城区、水田 12芯")
+        XCTAssertEqual(sheet?.text("C9"), "挂钩法架设架空光缆 丘陵、城区、水田 24芯")
+        XCTAssertEqual(sheet?.text("B10"), "TXL1-002")
+        XCTAssertEqual(sheet?.text("C10"), "光(电)缆工程施工测量 架空")
+        // 定额库名不得出现在 C 列（拼接重复的回归断言）。
+        for r in 6...10 {
+            XCTAssertFalse((sheet?.text("C\(r)") ?? "").contains("36 芯以下"), "C\(r) 不得含定额库名“36 芯以下”")
+        }
+        let c = book.sheet(named: "仪器仪表使用表(表三)丙")
+        XCTAssertEqual(c?.text("B6"), "TXL1-002")
+        XCTAssertEqual(c?.text("C6"), "光(电)缆工程施工测量 架空", "表三丙 quotaName 同样为 variant")
+        // variant 为空时回落定额库名。
+        XCTAssertEqual(displayName(quotas[0], ""), "挂钩法架设架空光缆 平原 36 芯以下")
     }
 
     func testWithProfileTable4RemarkFromLibrary() {

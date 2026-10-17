@@ -51,6 +51,56 @@ final class XlsxWriterTests: XCTestCase {
         XCTAssertFalse(xml.contains("a&b<c>"))
     }
 
+    // MARK: - A2：Normal 字体 / pageSetUpPr / dimension
+
+    func testNormalFontIsArial10() {
+        var sheet = makeSheet(name: "S")
+        sheet.setCell(row: 1, col: 1, value: .text("x"))
+        let data = XlsxWorkbook(sheets: [sheet]).build()
+        let book = XlsxTestReader.book(from: data)
+        // font[0] 必须是结算书的 Normal：Arial 10（旧为 Calibri 11，会使打印每表多一页）。
+        XCTAssertEqual(book?.fonts.first?.name, "Arial")
+        XCTAssertEqual(book?.fonts.first?.size, 10)
+    }
+
+    func testPageSetupHasNoIllegalFitToPageAndSheetPrHasPageSetUpPr() {
+        var sheet = makeSheet(name: "S")
+        sheet.setCell(row: 1, col: 1, value: .text("x"))
+        let data = XlsxWorkbook(sheets: [sheet]).build()
+        let entries = XlsxTestReader.unzipStored(data)
+        let xml = String(data: entries?["xl/worksheets/sheet1.xml"] ?? Data(), encoding: .utf8) ?? ""
+        // fitToPage 是 pageSetUpPr 的属性，pageSetup 元素不得带它（openpyxl 会报错）。
+        if let start = xml.range(of: "<pageSetup"),
+           let end = xml.range(of: "/>", range: start.upperBound..<xml.endIndex) {
+            XCTAssertFalse(xml[start.lowerBound..<end.upperBound].contains("fitToPage"))
+        } else {
+            XCTFail("应有 <pageSetup/> 元素")
+        }
+        // sheetPr 在 dimension 之前，且 pageSetUpPr fitToPage="false"（与 reference 一致）。
+        XCTAssertTrue(xml.contains("<sheetPr><pageSetUpPr fitToPage=\"false\"/></sheetPr>"))
+        let sheetPr = xml.range(of: "<sheetPr>")!
+        let dim = xml.range(of: "<dimension")!
+        XCTAssertLessThan(sheetPr.lowerBound, dim.lowerBound)
+    }
+
+    func testDimensionUsesActualContentNotLayoutMaxRow() {
+        var sheet = makeSheet(name: "S")
+        sheet.maxRow = 58 // 版式最大行（旧 dimension 会虚报 A1:J58）
+        sheet.maxColumn = 10
+        sheet.setCell(row: 1, col: 1, value: .text("a"))
+        sheet.setCell(row: 2, col: 2, value: .number(3.0))
+        sheet.merges.append("A3:B3") // 合并区末行/列也计入 dimension
+        let data = XlsxWorkbook(sheets: [sheet]).build()
+        let entries = XlsxTestReader.unzipStored(data)
+        let xml = String(data: entries?["xl/worksheets/sheet1.xml"] ?? Data(), encoding: .utf8) ?? ""
+        XCTAssertTrue(xml.contains("<dimension ref=\"A1:B3\"/>"))
+        // 空表 → A1:A1。
+        let empty = XlsxWorkbook(sheets: [makeSheet(name: "E")]).build()
+        let emptyXml = String(data: XlsxTestReader.unzipStored(empty)?["xl/worksheets/sheet1.xml"] ?? Data(),
+                              encoding: .utf8) ?? ""
+        XCTAssertTrue(emptyXml.contains("<dimension ref=\"A1:A1\"/>"))
+    }
+
     func testStyleDedup() {
         var sheet = makeSheet()
         let shared = XlsxCellStyle(font: .init(name: "宋体", size: 10))

@@ -75,10 +75,10 @@ struct BatchView: View {
                 }
                 GroupBox("④ 批量导出预算书") {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("勾选下方工程，一键导出每个工程的完整预算书 Excel。导出 xlsx 在阶段 4 实现。")
+                        Text("勾选下方工程，一键导出每个工程的完整预算书 Excel，文件名为“<工程名>_概预算.xlsx”。单个工程失败不中断其余工程。")
                             .foregroundColor(.secondary).font(.caption)
-                        Button("批量导出选中工程") { appState.showToast("批量导出 xlsx 在阶段 4 实现") }
-                            .disabled(true)
+                        Button("批量导出选中工程") { batchExport() }
+                            .disabled(selected.isEmpty)
                     }
                 }
                 GroupBox("⑤ 批量删除工程") {
@@ -131,9 +131,10 @@ struct BatchView: View {
         for n in list {
             var p = newProject(appState.db, name: n, template: tpl)
             if tpl != nil, multiplier != 1 {
+                // 与 Electron Batch.jsx 一致：数量×倍数后按 2 位舍入。
                 p.quantities = p.quantities.map { q in
                     var row = q
-                    row.qty = (row.qty ?? 0) * multiplier
+                    row.qty = r2((row.qty ?? 0) * multiplier)
                     return row
                 }
             }
@@ -159,6 +160,18 @@ struct BatchView: View {
             }
         }
         message = "已将 \(selected.count) 个工程的 \(matKey) 除税单价改为 \(newPrice) 元。"
+    }
+
+    private func batchExport() {
+        guard let dir = FilePanel.openDirectory(message: "选择批量导出预算书的保存目录") else { return }
+        let projects = appState.db.projects.filter { selected.contains($0.id) }
+        let result = appState.batchExportProjects(projects, to: dir)
+        if result.failures.isEmpty {
+            message = "已批量导出 \(result.succeeded) 个工程到 \(dir.path)。"
+        } else {
+            let names = result.failures.map { $0.0 }.joined(separator: "、")
+            message = "已导出 \(result.succeeded) 个，失败 \(result.failures.count) 个（\(names)）。"
+        }
     }
 
     private func batchDiscount() {

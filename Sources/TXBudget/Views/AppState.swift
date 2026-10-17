@@ -1,5 +1,6 @@
 #if os(macOS)
 import SwiftUI
+import AppKit
 import Combine
 
 /// 全局应用状态（对照 Electron `App.jsx`）：持有 db、导航、打开工程、保存状态。
@@ -17,6 +18,8 @@ final class AppState: ObservableObject {
     private let dataURL: URL
     private var autosaveTask: Task<Void, Never>?
     private var toastTask: Task<Void, Never>?
+    /// 加载失败时阻塞自动保存（防空白库覆盖原文件）；显式保存 / 成功重载时解除。
+    private var saveBlockedByLoadError = false
 
     init(dataURL: URL = DatabaseStore.defaultDataURL()) {
         self.dataURL = dataURL
@@ -51,6 +54,16 @@ final class AppState: ObservableObject {
         self.db = initialDb
         self.loadError = initialLoadError
         self.exportSelection = resolveExportSelection(initialDb.settings)
+        // 加载失败 → 阻塞自动保存，直到显式保存或成功重载。
+        self.saveBlockedByLoadError = initialLoadError != nil
+        // 退出前落盘：Cmd+Q / 菜单退出都会发 willTerminate，同步 flush 保证 800ms 窗口内的编辑不丢。
+        // 设计文档 §7 要求“关闭前有未保存仍提示”；此处改为“保证落盘、不弹窗”
+        // （自动保存 + 退出 flush 后退出时恒为已保存，弹窗纯属干扰），偏差见 v1.0.1 汇报。
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.flushSaves() }
+        }
     }
 
     // MARK: - 派生状态
@@ -83,6 +96,9 @@ final class AppState: ObservableObject {
     }
 
     private func scheduleAutosave(major: Bool) {
+        // 加载失败后禁止自动保存：此时内存可能是空白库，自动保存会把空白库写回原路径。
+        // 显式保存（flushSaves）不受此限制——用户明确要保存时才写盘。
+        guard !saveBlockedByLoadError else { return }
         autosaveTask?.cancel()
         autosaveTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 800_000_000)
@@ -91,8 +107,9 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// 显式保存：排空队列，立即写盘。
+    /// 显式保存：排空队列，立即写盘；同时解除加载失败的自动保存阻塞。
     func flushSaves() {
+        saveBlockedByLoadError = false
         autosaveTask?.cancel()
         autosaveTask = nil
         performSave(auto: false, major: false)
@@ -110,8 +127,9 @@ final class AppState: ObservableObject {
             if let reloaded = try? DatabaseStore.load(from: dataURL) {
                 db = reloaded
             }
-            saveState = SaveStatus(status: .saved, at: saveState.at, auto: false)
-            showToast("保存失败：\(error.localizedDescription)，已重拉磁盘数据")
+            // 失败后仍是 dirty（仍显示“● 未保存”，可重试），不许误报“✓ 已保存”。
+            saveState = saveState.transition(.edit)
+            showToast("保存失败：\(error.localizedDescription)，已重拉磁盘数据，请重试保存")
         }
     }
 
@@ -120,6 +138,7 @@ final class AppState: ObservableObject {
             if let loaded = try DatabaseStore.load(from: dataURL) {
                 db = loaded
                 loadError = nil
+                saveBlockedByLoadError = false
             }
         } catch {
             loadError = "重新加载失败：\(error.localizedDescription)"
@@ -228,6 +247,28 @@ final class AppState: ObservableObject {
     func setExportSelection(_ selection: [String]) {
         exportSelection = selection
         updateDb { d in d.settings.exportSelection = selection }
+    }
+
+    /// 批量导出：逐个工程计算并写盘，单个失败记录后继续（不中断其余工程）。
+    /// 文件名 `<工程名>_概预算.xlsx`（batchExportFileName），勾选表 = 当前导出勾选。
+    /// 返回 (成功数, 失败列表[(工程名, 原因)])，调用方负责提示。
+    func batchExportProjects(_ projects: [ProjectRecord], to dir: URL) -> (succeeded: Int, failures: [(String, String)]) {
+        var ok = 0
+        var failures: [(String, String)] = []
+        for p in projects {
+            do {
+                guard let result = calcFor(db, p) else { throw PrintExportError.writeFailed("计算失败") }
+                let profile = getProfile(db, p.profileId) ?? activeProfile(db)
+                try exportBudgetBook(
+                    to: dir.appendingPathComponent(batchExportFileName(for: p.name)),
+                    projectName: p.name, project: p.toEngineProject(), result: result,
+                    profile: profile, include: Set(exportSelection))
+                ok += 1
+            } catch {
+                failures.append((p.name, error.localizedDescription))
+            }
+        }
+        return (ok, failures)
     }
 }
 #endif

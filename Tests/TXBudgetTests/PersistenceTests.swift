@@ -111,6 +111,14 @@ final class PersistenceTests: XCTestCase {
         // 无 tmp 残留。
         let files = try FileManager.default.contentsOfDirectory(atPath: dir.path)
         XCTAssertFalse(files.contains { $0.hasSuffix(".tmp") })
+        // 覆盖写：rename 原子替换，第二次保存的内容完整胜出；旧文件只进滚动备份，无 tmp 残留。
+        var db2 = db
+        db2.meta.saveVersion = 99
+        try DatabaseStore.save(db2, to: url)
+        XCTAssertEqual(try DatabaseStore.load(from: url)?.meta.saveVersion, 99)
+        let files2 = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+        XCTAssertFalse(files2.contains { $0.hasSuffix(".tmp") })
+        XCTAssertEqual(files2.filter { $0.hasPrefix("budget-data.backup-") }.count, 1, "旧文件应进 1 份滚动备份")
     }
 
     func testProfileExportImportRoundTrip() throws {

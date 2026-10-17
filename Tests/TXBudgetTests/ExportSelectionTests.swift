@@ -40,6 +40,13 @@ final class ExportSelectionTests: XCTestCase {
         XCTAssertEqual(added, all)
     }
 
+    func testBatchExportFileName() {
+        XCTAssertEqual(batchExportFileName(for: "信阳联通工程"), "信阳联通工程_概预算.xlsx")
+        // 文件名非法字符全部换成 _（与 Electron 一致）。
+        XCTAssertEqual(batchExportFileName(for: "A/B:C*D?E\"F<G>H|I\\J"), "A_B_C_D_E_F_G_H_I_J_概预算.xlsx")
+        XCTAssertEqual(batchExportFileName(for: ""), "_概预算.xlsx")
+    }
+
     func testResolveEmptyFallsBackToAll() {
         // 空数组按“无有效勾选”处理，回落全选（与 Electron resolve 一致）。
         var s = SettingsRecord()

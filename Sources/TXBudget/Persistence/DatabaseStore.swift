@@ -1,4 +1,9 @@
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 /// 数据文件层（对照 Electron `dbStore.cjs` + `main.cjs` 的 loadDb/saveDb + `profiles.js` 的 applySavePatch）。
 /// 同一路径：~/Library/Application Support/通信概预算/budget-data.json（与 Electron 版同一 bundle 数据目录）。
@@ -111,8 +116,17 @@ public struct DatabaseStore {
             try? handle.synchronize()
             try? handle.close()
         }
-        if fm.fileExists(atPath: url.path) { try fm.removeItem(at: url) }
-        try fm.moveItem(at: tmp, to: url)
+        // 真原子替换：POSIX rename(2) 在同一目录内原子覆盖目标文件，任何时刻
+        // 磁盘上要么旧文件完整、要么新文件完整。旧实现 removeItem 再 moveItem
+        // 中间有文件缺失窗口，崩溃即丢文件（虽有滚动备份，仍须堵住）。
+        // 注：FileManager.replaceItemAt 在 Linux corelibs 上不可靠（实测报“文件不存在”），
+        // 故直接用 rename(2)，两平台同一代码路径。
+        if rename(tmp.path, url.path) != 0 {
+            let code = errno
+            try? fm.removeItem(at: tmp)
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(code),
+                          userInfo: [NSLocalizedDescriptionKey: "原子替换失败：\(String(cString: strerror(code)))"])
+        }
     }
 
     static func isoStamp(_ date: Date = Date()) -> String {

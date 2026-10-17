@@ -164,14 +164,18 @@ PrintExportTests.swift / XlsxTestReader.swift / ReferenceBookFixture.swift
 - 措辞：与结算书逐字一致，含折行位置：`不需要安装\n的设备、工\n器具费`、`危险作业意外伤害保险\n费`、`需要安装\n的设备费`、`建筑安装\n工程费`。标题用“预算”口径字样（不照抄参考文件的“结算”字样）。
 - 字体：各表表名标题 + 编制说明 → **Noto Sans CJK SC**；其余宋体/黑体照旧（数据 宋体 10、表尾 宋体 10、封面 宋体 36 bold 等）。数值单元格写数值型（不许写文本型字符串）。
 - 逐表生成：对照 Electron `electron/printExport.cjs` + `electron/printLayout.cjs` 逐表搬运（11 张表：封面 / 编制说明 / 汇总表 / 表一 / 表二折后 / 表二折前 / 表三甲 / 表三乙 / 表三丙 / 表四甲 / 表五甲）。表二双表版式一致，仅“依据和计算方法”列与数值不同；折后表计算方法列体现打折关系（`技工总工日X114X37.9%`、`人工费X1.5%/37.9%`、`(1-4之和)/37.9%`）。
+- **定额项目显示名（v1.0.1 修，A1）**：`displayName(quota, variant)`——variant 是**完整变体项目名称**（如“挂钩法架设架空光缆 平原 6芯”），非空时直接用 variant（替换定额库名），为空时用定额库名。**不许拼接** `quota.name + variant`（定额库名含“36 芯以下”时会与 variant 重复）。Electron `printExport.cjs:615-617` 有同一行拼接 bug（不在原生修复范围，原生与 Electron 在此处有意不同）。
+- **Normal 字体与分页（v1.0.1 修，A2）**：styles.xml 的 font[0]（Normal）= **Arial 10**（结算书口径；xlsx 列宽单位按 Normal 字体度量，Calibri 11 会使打印每表多出一页）；`<sheetPr><pageSetUpPr fitToPage="false"/></sheetPr>`（fitToPage 是 pageSetUpPr 的属性，pageSetup 元素不许带它）；`dimension` 按实际写入行列算（不许用版式 maxRow 虚报）。
 - 测试：`LayoutCompareTests`（逐项比对版式 fixture：列宽 / 行高 / 字体 / 合并 / 页边距，差一处即失败）+ `XlsxWriterTests`（ZIP 结构、CRC32、inlineStr 转义、样式去重）+ `PrintExportTests`（逐表值断言 + 子集导出 + 有 profile 时重分组）+ LibreOffice 往返 0 不一致（**本地手动验**：CI 的 macOS runner 无 LibreOffice，CI 内用解包数值断言替代）。
 
 ## 7. 持久化（与 Electron 同一文件，互通）
 
 - **同一路径**：Electron 的 `userData`（bundle id `com.zhang.txbudget`，productName `通信概预算`）→ macOS 下为 `~/Library/Application Support/通信概预算/budget-data.json`。**原生版用同一 bundle id `com.zhang.txbudget` 与同一数据路径**，v2/v3 数据文件直接打开；用户在 Mac 上用原生版替换 Electron 版（Electron 版只留 Windows）。
-- **原子写**：写临时文件 → fsync → rename 覆盖（见 `electron/dbStore.cjs` 的 `atomicWriteFileSync`）。
+- **原子写**：写临时文件 → fsync → POSIX `rename(2)` 覆盖（见 `electron/dbStore.cjs` 的 `atomicWriteFileSync`）。**不许用“先删目标再移动”**（中间有文件缺失窗口）；`FileManager.replaceItemAt` 在 Linux corelibs 上不可靠（实测报“文件不存在”），故直接用 `rename(2)`，两平台同一代码路径。
 - **备份**：滚动备份 `budget-data.backup-<戳>.json`（保留 5 份，最小间隔 1 小时，重大操作强制备份）；v1 迁移快照 `budget-data.v1-backup-*.json` 永不自动删除；滚动清理只碰 `budget-data.backup-*`。
 - **增量保存语义**：沿用 `applySavePatch` 白名单（`profile / project / configurationProfiles / projects / settings / settingsPatch`）+ `baseVersion` 冲突检测（`meta.saveVersion` 不匹配时返回冲突，不改数据）。保存队列节流 800ms（自动保存兜底）+ 显式保存按钮排空队列。
+- **保存失败与加载失败（v1.0.1 修）**：保存失败后状态仍为 dirty（显示“● 未保存”，可重试），不许误报“✓ 已保存”；加载失败时阻塞自动保存（防空白库覆盖原文件），显式保存 / 成功重载时解除。
+- **退出落盘（v1.0.1 修，与本节原“关闭前有未保存仍提示”有偏差）**：退出时同步 flush（`NSApplication.willTerminateNotification` 观察者 + 工具栏“退出”按钮先 flush 再 terminate），保证 800ms 窗口内的编辑不丢；不弹关闭提示——自动保存 + 退出 flush 后退出时恒为已保存，弹窗纯属干扰。**该偏差待用户确认是否仍要弹窗**。
 - **导入/导出**：配置方案文件（`{profileFormat: 1, exportedAt, profile}`，导入校验格式 + 必备字段，成功赋新 id、`source='imported'`）；整库备份/导入导出（设置页）。
 
 ## 8. CI + 发布（v1.0.0）
@@ -192,6 +196,7 @@ PrintExportTests.swift / XlsxTestReader.swift / ReferenceBookFixture.swift
 | 3 | 数据模型（Codable）+ 持久化 + SwiftUI 界面 | 能读写 Electron v2/v3 真实数据文件（用 Electron 测试夹具验证）；原子写 + 备份单测；CI 编译通过；用户真机点按走查（侧边栏、保存、配置方案、工作量五标签、导出勾选） |
 | 4 | xlsx 导出 + `LibraryColumn` 结构小修 | 布局对比测试全过；LibreOffice 往返 0 不一致（本地手动验）；导出与结算书逐项对齐；`LibraryColumn` / `LibraryColumnKind` 移入 Logic，Views 只留引用 |
 | 5 | 发布 v1.0.0 | tag → CI → Release 资产核实 |
+| 6 | v1.0.1：全面自查 + 修到交付标准 | A1 定额名重复（displayName 用 variant 替换）/ A2 打印超范围（Normal Arial 10 + pageSetUpPr + dimension 按实际行列）/ P0 批量导出真实实现 / P1 被占用方案删除自选切换目标 / P1 保存安全（失败保持 dirty、加载失败阻塞自动保存、rename 原子写、退出 flush）；Swift 测试 108 过 / LO 渲染最小工程 11 页、整本 12 页（表三甲 2 页）、0 不一致 |
 
 - 每个阶段交付时附：改了什么、测试通过数、提交 SHA、CI 状态。最终汇报同前。
 - **实机点按走查由用户做**（CI 验的是能编过 + 逻辑/导出正确；界面长什么样、点按顺不顺仍需用户真机验收——如实说明，不许声称本地验过界面）。

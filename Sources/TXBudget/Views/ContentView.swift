@@ -26,7 +26,11 @@ struct ContentView: View {
                 }
                 Text(appState.saveState.text)
                     .foregroundColor(appState.saveState.status == .dirty ? .red : .secondary)
-                Button("退出") { NSApplication.shared.terminate(nil) }
+                Button("退出") {
+                    // 先同步落盘再退出（willTerminate 观察者也会 flush，双重保险）。
+                    appState.flushSaves()
+                    NSApplication.shared.terminate(nil)
+                }
             }
         }
         .safeAreaInset(edge: .bottom) {

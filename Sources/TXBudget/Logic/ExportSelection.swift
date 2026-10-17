@@ -43,6 +43,14 @@ public func resolveExportSelection(_ settings: SettingsRecord) -> [String] {
     return kept.isEmpty ? defaultExportSelection() : kept
 }
 
+/// 批量导出文件名：`<清洗后工程名>_概预算.xlsx`（与 Electron Batch.jsx / Projects.jsx 一致）。
+/// 清洗：文件名非法字符 `\ / : * ? " < > |` 换成 `_`。
+public func batchExportFileName(for projectName: String) -> String {
+    let bad = CharacterSet(charactersIn: "\\/:*?\"<>|")
+    let safe = projectName.unicodeScalars.map { bad.contains($0) ? "_" : String($0) }.joined()
+    return "\(safe)_概预算.xlsx"
+}
+
 /// 勾选切换（单张表）。
 public func toggleExportSelection(_ selection: [String], _ sheet: String) -> [String] {
     var set = Set(selection)

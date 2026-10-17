@@ -246,6 +246,27 @@ public func colLetter(_ n: Int) -> String {
 
 func cellRef(row: Int, col: Int) -> String { "\(colLetter(col))\(row)" }
 
+/// 反解析单元格引用（如 "J58" → (58, 10)），供 dimension 计算用；非法引用 → (0, 0)。
+func parseCellRefForDimension(_ ref: String) -> (Int, Int) {
+    var col = 0
+    var row = 0
+    var sawLetter = false
+    var sawDigit = false
+    for ch in ref {
+        if let v = ch.asciiValue, v >= 65, v <= 90 {
+            if sawDigit { return (0, 0) }
+            col = col * 26 + Int(v - 64)
+            sawLetter = true
+        } else if let v = ch.asciiValue, v >= 48, v <= 57 {
+            row = row * 10 + Int(v - 48)
+            sawDigit = true
+        } else {
+            return (0, 0)
+        }
+    }
+    return (sawLetter && sawDigit) ? (row, col) : (0, 0)
+}
+
 func formatDouble(_ v: Double) -> String {
     if v == v.rounded(), abs(v) < 1e15 { return String(Int64(v)) }
     return String(v)
@@ -262,8 +283,10 @@ public struct XlsxWorkbook {
 
     public func build() -> Data {
         // 样式去重：字体 / 边框 / （字体+对齐+数字格式+边框）组合。
-        var fonts: [XlsxFont] = [XlsxFont(name: "Calibri", size: 11)]
-        var fontIds: [XlsxFont: Int] = [XlsxFont(name: "Calibri", size: 11): 0]
+        // Normal（font[0]）= 结算书的 Arial 10：xlsx 列宽单位按 Normal 字体度量；
+        // 之前误写 Calibri 11，同样宽度数值渲染宽约 10%，导致打印时每表多出一页（A2）。
+        var fonts: [XlsxFont] = [XlsxFont(name: "Arial", size: 10)]
+        var fontIds: [XlsxFont: Int] = [XlsxFont(name: "Arial", size: 10): 0]
         var borders: [XlsxBorder] = [.none]
         var borderIds: [XlsxBorder: Int] = [.none: 0]
         var numFmtIds: [String: Int] = [:] // 自定义格式 → id（164 起）
@@ -421,14 +444,31 @@ public struct XlsxWorkbook {
         return zipStored(entries: entries)
     }
 
+    /// dimension 按实际内容算（行 = 写入的行/合并区末行最大值，列同理）：
+    /// 不许用 sheet.maxRow（版式最大行）。1 行工程的表三甲实际只有 29 行，
+    /// 用版式 maxRow=58 会虚报 A1:J58，WPS/Excel 下可能多出空白页（A2）。
+    private func dimensionRef(_ sheet: XlsxSheet) -> String {
+        var maxRow = sheet.rows.keys.max() ?? 0
+        var maxCol = sheet.rows.values.flatMap { $0.cells.keys }.max() ?? 0
+        for m in sheet.merges {
+            let end = m.split(separator: ":").last ?? ""
+            let (r, c) = parseCellRefForDimension(String(end))
+            maxRow = max(maxRow, r)
+            maxCol = max(maxCol, c)
+        }
+        return "\(cellRef(row: 1, col: 1)):\(cellRef(row: max(maxRow, 1), col: max(maxCol, 1)))"
+    }
+
     private func sheetXML(_ sheet: XlsxSheet, xfIds: [XlsxCellStyle: Int]) -> String {
-        let maxRow = max(sheet.maxRow, sheet.rows.keys.max() ?? 0)
-        let maxCol = max(sheet.maxColumn, sheet.rows.values.flatMap { $0.cells.keys }.max() ?? 0)
         var xml = """
             <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
             <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
             """
-        xml += "<dimension ref=\"\(cellRef(row: 1, col: 1)):\(cellRef(row: max(maxRow, 1), col: max(maxCol, 1)))\"/>"
+        // sheetPr 必须在 dimension 之前；fitToPage 是 pageSetUpPr 的属性，
+        // pageSetup 元素没有它（旧代码写在 pageSetup 上，openpyxl 解析会报错，A2）。
+        let ps = sheet.pageSetup
+        xml += "<sheetPr><pageSetUpPr fitToPage=\"\(ps.fitToPage ? "true" : "false")\"/></sheetPr>"
+        xml += "<dimension ref=\"\(dimensionRef(sheet))\"/>"
         xml += "<sheetViews><sheetView workbookViewId=\"0\"/></sheetViews>"
         xml += "<sheetFormatPr defaultRowHeight=\"15.2\"/>"
         if !sheet.widths.isEmpty {
@@ -471,8 +511,8 @@ public struct XlsxWorkbook {
         }
         let m = sheet.pageSetup.margins
         xml += "<pageMargins left=\"\(formatDouble(m.left))\" right=\"\(formatDouble(m.right))\" top=\"\(formatDouble(m.top))\" bottom=\"\(formatDouble(m.bottom))\" header=\"\(formatDouble(m.header))\" footer=\"\(formatDouble(m.footer))\"/>"
-        let ps = sheet.pageSetup
-        xml += "<pageSetup orientation=\"\(ps.orientation)\" paperSize=\"\(ps.paperSize)\" fitToPage=\"\(ps.fitToPage ? 1 : 0)\" scale=\"\(ps.scale)\"/>"
+        // pageSetup 元素无 fitToPage 属性（见上），只写 orientation/paperSize/scale。
+        xml += "<pageSetup orientation=\"\(ps.orientation)\" paperSize=\"\(ps.paperSize)\" scale=\"\(ps.scale)\"/>"
         if !sheet.rowBreaks.isEmpty {
             xml += "<rowBreaks count=\"\(sheet.rowBreaks.count)\" manualBreakCount=\"\(sheet.rowBreaks.count)\">"
             for br in sheet.rowBreaks { xml += "<brk id=\"\(br)\" max=\"16383\" man=\"1\"/>" }

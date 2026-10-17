@@ -681,9 +681,14 @@ func groupQuantities(_ project: Project, _ quotaByCode: [String: QuotaRow]) -> [
     return entries
 }
 
-/// 定额库项目名称 + 变体后缀（变体为空时取定额库 name）。
+/// 定额项目显示名：variant 是**完整变体项目名称**（如“挂钩法架设架空光缆 平原 6芯”），
+/// 非空时直接用 variant（替换定额库名），为空时取定额库 name。
+/// 注意：不得拼接 `quota.name + variant`——定额库名（如 TXL3-187 的“…平原 36 芯以下”）
+/// 与 variant（如“…平原 6芯”）拼接会在导出表三甲 C 列出现重复（v1.0.0 bug，见 A1）。
+/// 结算书 ground truth：TXL3-187 行即 variant 单独；TXL3-192 三行分别为丘陵、城区、水田 6/12/24芯。
+/// Electron `printExport.cjs:615-617` 有同一行拼接 bug（不在原生修复范围，见汇报）。
 func displayName(_ quota: QuotaRow, _ variant: String) -> String {
-    variant.isEmpty ? quota.name : "\(quota.name) \(variant)"
+    variant.isEmpty ? quota.name : variant
 }
 
 // MARK: - 7. 表三甲（分页：每页 29 行）

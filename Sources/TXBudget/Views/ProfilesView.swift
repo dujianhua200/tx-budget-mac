@@ -86,28 +86,48 @@ struct ProfilesView: View {
         } message: {
             Text("将删除配置方案“\(deleteProfile?.name ?? "")”（含其全部库、费率、规则），该方案无工程引用。删除前已备份。")
         }
-        .alert("无法删除“\(blockedProfile?.name ?? "")”", isPresented: Binding(
+        .sheet(isPresented: Binding(
             get: { blockedProfile != nil },
             set: { if !$0 { blockedProfile = nil } }
         )) {
-            Button("取消", role: .cancel) { blockedProfile = nil }
-            Button("切换工程") {
-                if let p = blockedProfile, !switchTarget.isEmpty {
-                    appState.updateDb { d in
-                        for i in d.projects.indices where d.projects[i].profileId == p.id {
-                            d.projects[i].profileId = switchTarget
+            // 被占用方案删除：Alert 的 message 只能放 Text，无法让用户选切换目标；
+            // 改用 sheet，Picker 自选目标方案，一步完成“切换工程 + 删除方案”。
+            if let p = blockedProfile {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("删除方案“\(p.name)”").font(.headline)
+                    Text("仍有 \(projectsOf(p.id).count) 个工程使用该方案：\(projectsOf(p.id).map { $0.name }.joined(separator: "、"))。请选择这些工程要切换到的方案，切换后本方案将被删除。")
+                        .foregroundColor(.secondary)
+                    Picker("切换到方案", selection: $switchTarget) {
+                        ForEach(blockedOthers, id: \.id) { other in
+                            Text(other.name).tag(other.id)
                         }
                     }
-                    blockedProfile = nil
+                    HStack {
+                        Button("取消", role: .cancel) { blockedProfile = nil }
+                        Button("切换工程并删除", role: .destructive) {
+                            guard !switchTarget.isEmpty else { return }
+                            appState.updateDb { d in
+                                for i in d.projects.indices where d.projects[i].profileId == p.id {
+                                    d.projects[i].profileId = switchTarget
+                                }
+                            }
+                            appState.deleteProfile(p.id)
+                            appState.showToast("已删除配置方案“\(p.name)”")
+                            blockedProfile = nil
+                        }
+                        .disabled(switchTarget.isEmpty)
+                    }
                 }
-            }
-        } message: {
-            if let p = blockedProfile {
-                let using = projectsOf(p.id)
-                let targetName = appState.db.configurationProfiles.first { $0.id == switchTarget }?.name ?? "—"
-                Text("仍有 \(using.count) 个工程使用该方案，无法直接删除。\n工程：\(using.map { $0.name }.joined(separator: "、"))\n点“切换工程”会把这些工程切换到方案“\(targetName)”，之后可再删除本方案。")
+                .padding()
+                .frame(width: 420)
             }
         }
+    }
+
+    /// 被占用方案删除时可切换的目标方案（排除自身）。
+    private var blockedOthers: [ConfigurationProfile] {
+        guard let p = blockedProfile else { return [] }
+        return appState.db.configurationProfiles.filter { $0.id != p.id }
     }
 
     private func projectsOf(_ pid: String) -> [ProjectRecord] {
