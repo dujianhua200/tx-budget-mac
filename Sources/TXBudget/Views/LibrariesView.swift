@@ -126,7 +126,7 @@ struct DictTableView: View {
             .controlSize(.small)
             Table(indexedRows, selection: $selected) {
                 ForEach(columns, id: \.key) { col in
-                    TableColumn(col.label) { indexed in
+                    TableColumn(col.label) { (indexed: IndexedRow<[String: String]>) in
                         cell(col, indexed.row, indexed.id)
                     }
                 }

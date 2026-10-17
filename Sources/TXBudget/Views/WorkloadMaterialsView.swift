@@ -79,7 +79,8 @@ struct WorkloadEquipView: View {
 }
 
 /// 材料表（表四甲结构，复用于材料汇总三组 / 安装设备子集）。
-/// 列：名称 / 规格 / 单位 / 自动数量 / 手动调整 / 数量 / 除税单价 / 增值税/单位 / 含税单价 / 除税合计 / 增值税合计。
+/// 列：名称 / 规格 / 单位 / 自动数量 / 手动调整 / 数量 / 除税单价 / 增值税/单位 / 含税单价 / 合计（除税 / 增值税）。
+/// 注：TableBuilder 最多 10 列，除税合计与增值税合计合并为一列展示。
 struct MatTableView: View {
     @EnvironmentObject private var appState: AppState
     var title: String
@@ -108,8 +109,9 @@ struct MatTableView: View {
                 }
                 TableColumn("增值税/单位") { r in MoneyText(value: r.priceVat) }
                 TableColumn("含税单价") { r in MoneyText(value: r.priceIncl) }
-                TableColumn("除税合计") { r in MoneyText(value: r.amtExcl) }
-                TableColumn("增值税合计") { r in MoneyText(value: r.amtVat) }
+                TableColumn("合计（除税 / 增值税）") { r in
+                    Text("\(money(r.amtExcl)) / \(money(r.amtVat))")
+                }
             }
             .tableStyle(.inset)
             if table.rows.isEmpty {

@@ -6,9 +6,9 @@ import Foundation
 extension KeyedDecodingContainer {
     /// 数值（Double / Int / 数字字符串 / null → nil）。
     func decodeLenientDouble(forKey key: Key) -> Double? {
-        if let v = try? decodeIfPresent(Double.self, forKey: key), let v { return v }
-        if let i = try? decodeIfPresent(Int.self, forKey: key), let i { return Double(i) }
-        if let s = try? decodeIfPresent(String.self, forKey: key), let s {
+        if let v = try? decodeIfPresent(Double.self, forKey: key) { return v }
+        if let i = try? decodeIfPresent(Int.self, forKey: key) { return Double(i) }
+        if let s = try? decodeIfPresent(String.self, forKey: key) {
             let t = s.trimmingCharacters(in: .whitespaces)
             if t.isEmpty { return nil }
             return Double(t)
@@ -21,24 +21,24 @@ extension KeyedDecodingContainer {
     }
 
     func decodeLenientString(forKey key: Key, default defaultValue: String = "") -> String {
-        if let s = try? decodeIfPresent(String.self, forKey: key), let s { return s }
-        if let n = try? decodeIfPresent(Double.self, forKey: key), let n { return jsNumberString(n) }
-        if let i = try? decodeIfPresent(Int.self, forKey: key), let i { return String(i) }
-        if let b = try? decodeIfPresent(Bool.self, forKey: key), let b { return b ? "true" : "false" }
+        if let s = try? decodeIfPresent(String.self, forKey: key) { return s }
+        if let n = try? decodeIfPresent(Double.self, forKey: key) { return jsNumberString(n) }
+        if let i = try? decodeIfPresent(Int.self, forKey: key) { return String(i) }
+        if let b = try? decodeIfPresent(Bool.self, forKey: key) { return b ? "true" : "false" }
         return defaultValue
     }
 
     func decodeLenientStringOptional(forKey key: Key) -> String? {
         if let s = try? decodeIfPresent(String.self, forKey: key) { return s }
-        if let n = try? decodeIfPresent(Double.self, forKey: key), let n { return jsNumberString(n) }
-        if let i = try? decodeIfPresent(Int.self, forKey: key), let i { return String(i) }
+        if let n = try? decodeIfPresent(Double.self, forKey: key) { return jsNumberString(n) }
+        if let i = try? decodeIfPresent(Int.self, forKey: key) { return String(i) }
         return nil
     }
 
     func decodeLenientBool(forKey key: Key, default defaultValue: Bool) -> Bool {
-        if let b = try? decodeIfPresent(Bool.self, forKey: key), let b { return b }
-        if let i = try? decodeIfPresent(Int.self, forKey: key), let i { return i != 0 }
-        if let s = try? decodeIfPresent(String.self, forKey: key), let s {
+        if let b = try? decodeIfPresent(Bool.self, forKey: key) { return b }
+        if let i = try? decodeIfPresent(Int.self, forKey: key) { return i != 0 }
+        if let s = try? decodeIfPresent(String.self, forKey: key) {
             let t = s.trimmingCharacters(in: .whitespaces).lowercased()
             if t == "true" || t == "1" { return true }
             if t == "false" || t == "0" { return false }
@@ -48,7 +48,7 @@ extension KeyedDecodingContainer {
 
     func decodeLenientBoolOptional(forKey key: Key) -> Bool? {
         if let b = try? decodeIfPresent(Bool.self, forKey: key) { return b }
-        if let i = try? decodeIfPresent(Int.self, forKey: key), let i { return i != 0 }
+        if let i = try? decodeIfPresent(Int.self, forKey: key) { return i != 0 }
         return nil
     }
 }
