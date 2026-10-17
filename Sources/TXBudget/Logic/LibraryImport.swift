@@ -347,8 +347,11 @@ public struct ImportClassifyColumn: Equatable {
     public var label: String
     public var kind: LibraryColumnKind
     public var readonly: Bool
-    public init(field: String, label: String, kind: LibraryColumnKind, readonly: Bool = false) {
+    public var options: [String]
+    public init(field: String, label: String, kind: LibraryColumnKind, readonly: Bool = false,
+                options: [String] = []) {
         self.field = field; self.label = label; self.kind = kind; self.readonly = readonly
+        self.options = options
     }
 }
 
@@ -363,12 +366,12 @@ public func classifyColumns(for kind: ImportLibraryKind) -> [ImportClassifyColum
     }
     if kind == .table5Fees {
         return LibraryRowCodec.table5Columns.map {
-            ImportClassifyColumn(field: $0.key, label: $0.label, kind: $0.kind)
+            ImportClassifyColumn(field: $0.key, label: $0.label, kind: $0.kind, options: $0.options)
         }
     }
     guard let viewKey = kind.libraryViewKey else { return [] }
     return LibraryRowCodec.columns(for: viewKey).map {
-        ImportClassifyColumn(field: $0.key, label: $0.label, kind: $0.kind)
+        ImportClassifyColumn(field: $0.key, label: $0.label, kind: $0.kind, options: $0.options)
     }
 }
 
