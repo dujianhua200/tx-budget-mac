@@ -526,7 +526,8 @@ public struct Table3EquipResult: Equatable {
     public init(rows: [Table3EquipRow] = [], total: Double = 0) { self.rows = rows; self.total = total }
 }
 
-public struct Table4Row: Equatable {
+public struct Table4Row: Equatable, Identifiable {
+    public var id: String { key }
     public var key: String
     public var name: String
     public var spec: String

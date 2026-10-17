@@ -29,7 +29,7 @@ struct WorkloadMaterialsView: View {
         let alts = libs.rules.filter { $0.kind == "备选" }
         return VStack(alignment: .leading, spacing: 8) {
             Text("备选材料（默认不计，勾选后按变体精确匹配计入）").font(.headline)
-            Table(alts, id: \.id) {
+            Table(alts) {
                 TableColumn("定额编号") { r in Text(r.quota) }
                 TableColumn("变体项目名称") { r in Text(r.variant) }
                 TableColumn("材料") { r in Text(r.material) }
@@ -90,7 +90,7 @@ struct MatTableView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("\(title)（合计除税 \(money(table.totalExcl))，增值税 \(money(table.totalVat))，含税 \(money(table.totalIncl))）")
                 .font(.headline)
-            Table(table.rows, id: \.key) {
+            Table(table.rows) {
                 TableColumn("名称") { r in Text(r.name + (r.unmatched ? "（未建档）" : "")) }
                 TableColumn("规格") { r in Text(r.spec) }
                 TableColumn("单位") { r in Text(r.unit) }

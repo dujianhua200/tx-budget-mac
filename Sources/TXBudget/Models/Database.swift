@@ -53,7 +53,7 @@ public struct SettingsRecord: Equatable, Codable {
 }
 
 /// 配置方案（Electron `configurationProfiles[]` 一项）。
-public struct ConfigurationProfile: Equatable, Codable {
+public struct ConfigurationProfile: Equatable, Codable, Identifiable {
     public var id: String
     public var name: String
     public var description: String
@@ -113,7 +113,7 @@ public struct ConfigurationProfile: Equatable, Codable {
 }
 
 /// 工程记录（Electron `projects[]` 一项；扁平结构，与 Electron JSON 键一一对应）。
-public struct ProjectRecord: Equatable, Codable {
+public struct ProjectRecord: Equatable, Codable, Identifiable {
     public var id: String
     public var name: String
     public var createdAt: String

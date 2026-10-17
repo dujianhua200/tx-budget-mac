@@ -49,7 +49,7 @@ struct ProjectsView: View {
             }
             .controlSize(.small)
 
-            Table(filteredProjects, id: \.id, selection: $selected) {
+            Table(filteredProjects, selection: $selected) {
                 TableColumn("工程名称") { p in
                     Button(p.name) { appState.openProject(p.id) }
                         .buttonStyle(.plain)

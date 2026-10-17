@@ -84,7 +84,7 @@ public struct MaterialRow: Equatable, Codable {
     }
 }
 
-public struct RuleRow: Equatable, Codable {
+public struct RuleRow: Equatable, Codable, Identifiable {
     public var id: String
     public var quota: String
     public var material: String

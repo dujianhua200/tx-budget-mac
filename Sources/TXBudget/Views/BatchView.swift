@@ -93,7 +93,7 @@ struct BatchView: View {
                 if !message.isEmpty {
                     Text(message).foregroundColor(.secondary)
                 }
-                Table(appState.db.projects, id: \.id, selection: $selected) {
+                Table(appState.db.projects, selection: $selected) {
                     TableColumn("工程名称") { p in Text(p.name) }
                     TableColumn("工程量行数") { p in Text("\(p.quantities.count)") }
                     TableColumn("总计（含税）") { p in
@@ -141,7 +141,10 @@ struct BatchView: View {
         }
         appState.updateDb { d in d.projects.insert(contentsOf: created, at: 0) }
         names = ""
-        message = "已批量新建 \(created.count) 个工程\(tpl.map { "（套用模板 \($0.name)\(multiplier != 1 ? "，数量×\(jsNumberString(multiplier))" : "")" }") ?? ""）。"
+        let suffix = tpl.map { t in
+            "（套用模板 \(t.name)\(multiplier != 1 ? "，数量×\(jsNumberString(multiplier))" : "")"
+        } ?? ""
+        message = "已批量新建 \(created.count) 个工程\(suffix)。"
     }
 
     private func batchPrice() {

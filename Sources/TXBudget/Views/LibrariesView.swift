@@ -2,18 +2,22 @@
 import SwiftUI
 
 /// 库表列定义（对照 Electron `libraryDefs.js` 的 columns：text | number | select | checkbox）。
-enum LibraryColumnKind: Equatable {
+/// public：LibraryRowCodec（Logic 层）的公开 API 以它为入参/返回值。
+public enum LibraryColumnKind: Equatable {
     case text
     case number
     case select
     case checkbox
 }
 
-struct LibraryColumn: Equatable {
-    var key: String
-    var label: String
-    var kind: LibraryColumnKind
-    var options: [String] = []
+public struct LibraryColumn: Equatable {
+    public var key: String
+    public var label: String
+    public var kind: LibraryColumnKind
+    public var options: [String] = []
+    public init(key: String, label: String, kind: LibraryColumnKind, options: [String] = []) {
+        self.key = key; self.label = label; self.kind = kind; self.options = options
+    }
 }
 
 /// 基础库视图（编辑目标 = settings.editingProfileId，不碰 activeProfileId）。

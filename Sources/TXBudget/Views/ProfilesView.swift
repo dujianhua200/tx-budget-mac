@@ -15,7 +15,7 @@ struct ProfilesView: View {
 @State private var switchTarget = ""
 
 var body: some View {
-VStack(alignment:.leading, spacing: 12) {
+VStack(alignment: .leading, spacing: 12) {
 Text("配置方案").font(.headline)
 Text("每套方案拥有独立完整的一套库、费率、规则，不同方案之间数据完全隔离。")
 .foregroundColor(.secondary).font(.caption)
@@ -27,13 +27,13 @@ ForEach(appState.db.configurationProfiles, id: \.id) { p in
 Text(p.name).tag(p.id)
 }
 }.frame(width: 200)
-Button("＋ 新建方案") { createProfile()}
+Button("＋ 新建方案") { createNewProfile()}
 .buttonStyle(.borderedProminent)
 Button("导入方案文件") { importProfile()}
 Button("整库备份") { exportBackup()}
 }
 .controlSize(.small)
-Table(appState.db.configurationProfiles, id: \.id) {
+Table(appState.db.configurationProfiles) {
 TableColumn("方案名") { p in
 if renameId == p.id {
 HStack {
@@ -59,7 +59,7 @@ TableColumn("操作") { p in
 HStack {
 Button("编辑内容") {
 appState.setEditingProfile(p.id)
-appState.nav =.libraries(.quotas)
+appState.nav = .libraries(.quotas)
 appState.showToast("正在编辑方案“\(p.name)”")
 }
 .buttonStyle(.borderedProminent)
@@ -75,8 +75,8 @@ Button("删除") { askDelete(p)}
 .tableStyle(.inset)
 }
 .alert("删除配置方案“\(deleteProfile?.name?? "")”？", isPresented: $showDeleteConfirm) {
-Button("取消", role:.cancel) { deleteProfile = nil}
-Button("确认删除", role:.destructive) {
+Button("取消", role: .cancel) { deleteProfile = nil}
+Button("确认删除", role: .destructive) {
 if let p = deleteProfile {
 appState.deleteProfile(p.id)
 appState.showToast("已删除配置方案“\(p.name)”")
@@ -88,11 +88,11 @@ Text("将删除配置方案“\(deleteProfile?.name?? "")”（含其全部库�
 }
 .alert("无法删除“\(blockedProfile?.name?? "")”", isPresented: Binding(
 get: { blockedProfile!= nil},
-set: { if!$0 { blockedProfile = nil}}
+set: { if !$0 { blockedProfile = nil}}
 )) {
-Button("取消", role:.cancel) { blockedProfile = nil}
+Button("取消", role: .cancel) { blockedProfile = nil}
 Button("切换工程") {
-if let p = blockedProfile,!switchTarget.isEmpty {
+if let p = blockedProfile, !switchTarget.isEmpty {
 appState.updateDb { d in
 for i in d.projects.indices where d.projects[i].profileId == p.id {
 d.projects[i].profileId = switchTarget
@@ -104,7 +104,8 @@ blockedProfile = nil
 } message: {
 if let p = blockedProfile {
 let using = projectsOf(p.id)
-Text("仍有 \(using.count) 个工程使用该方案，无法直接删除。\n工程：\(using.map { $0.name}.joined(separator: "、"))\n请先将这些工程切换到其他方案，再删除。")
+let targetName = appState.db.configurationProfiles.first { $0.id == switchTarget}?.name ?? "—"
+Text("仍有 \(using.count) 个工程使用该方案，无法直接删除。\n工程：\(using.map { $0.name}.joined(separator: "、"))\n点“切换工程”会把这些工程切换到方案“\(targetName)”，之后可再删除本方案。")
 }
 }
 }
@@ -116,14 +117,15 @@ appState.db.projects.filter { $0.profileId == pid}
 private func statusText(_ p: ConfigurationProfile) -> String {
 var parts: [String] = []
 if appState.db.settings.activeProfileId == p.id { parts.append("新建默认")}
-if (appState.db.settings.editingProfileId?? appState.db.settings.activeProfileId) == p.id {
+if (appState.db.settings.editingProfileId ?? appState.db.settings.activeProfileId) == p.id {
 parts.append("正在编辑")
 }
 return parts.joined(separator: " · ")
 }
 
-private func createProfile() {
-let name = newName.trimmingCharacters(in:.whitespaces).isEmpty? "新配置方案": newName.trimmingCharacters(in:.whitespaces)
+private func createNewProfile() {
+let trimmed = newName.trimmingCharacters(in: .whitespaces)
+let name = trimmed.isEmpty ? "新配置方案" : trimmed
 if let template = appState.db.configurationProfiles.first(where: { $0.id == templateId}) {
 var copy = duplicateProfile(template)
 copy.name = name
@@ -141,8 +143,8 @@ appState.showToast("已复制为“\(p.name)（副本）”")
 }
 
 private func rename(_ p: ConfigurationProfile) {
-let name = renameValue.trimmingCharacters(in:.whitespaces)
-guard!name.isEmpty else { renameId = nil; return}
+let name = renameValue.trimmingCharacters(in: .whitespaces)
+guard !name.isEmpty else { renameId = nil; return}
 appState.updateDb { d in
 if let i = d.configurationProfiles.firstIndex(where: { $0.id == p.id}) {
 d.configurationProfiles[i].name = name
@@ -158,9 +160,9 @@ if appState.db.configurationProfiles.count <= 1 {
 appState.showToast("至少保留一个配置方案，无法删除最后一个方案。")
 return
 }
-if!projectsOf(p.id).isEmpty {
+if !projectsOf(p.id).isEmpty {
 blockedProfile = p
-switchTarget = appState.db.configurationProfiles.first { $0.id!= p.id}?.id?? ""
+switchTarget = appState.db.configurationProfiles.first { $0.id != p.id}?.id ?? ""
 return
 }
 deleteProfile = p

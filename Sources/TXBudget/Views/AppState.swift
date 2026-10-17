@@ -106,7 +106,7 @@ final class AppState: ObservableObject {
                 db = reloaded
             }
             saveState = SaveStatus(status: .saved, at: saveState.at, auto: false)
-            showToast("保存失败：\(error.localizedDescription}，已重拉磁盘数据")
+            showToast("保存失败：\(error.localizedDescription)，已重拉磁盘数据")
         }
     }
 
