@@ -66,14 +66,24 @@ jobs:
           for AID in $DEL_IDS; do
             gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$AID" >/dev/null
           done
-          # 上传：资产名必须百分号编码，否则 GitHub 会剥掉中文前缀（见设计文档 §8）。
+          # 上传：资产名与 label 均传百分号编码后的文件名。
+          # 注意：GitHub 服务端会把资产 name 里的非 ASCII 字符剥掉（百分号编码也救不了，
+          # v1.0.2 已两次验证：softprops 与本 curl 路径结果相同），仅 label 保留中文全名。
+          # 故校验以 label + 大小为准，不以 name 为准（见设计文档 §8）。
           ENC="$(python3 -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe="-._"))' "$NAME")"
           curl -sS -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Content-Type: application/octet-stream" \
             --data-binary @"$DMG" \
             "https://uploads.github.com/repos/${{ github.repository }}/releases/$REL/assets?name=$ENC&label=$ENC"
-          GOT="$(gh api "repos/${{ github.repository }}/releases/$REL/assets" --jq '.[].name')"
+          SIZE="$(stat -f%z "$DMG")"
+          GOT="$(gh api "repos/${{ github.repository }}/releases/$REL/assets" | python3 -c "
+          import json, sys
+          label, size = sys.argv[1], int(sys.argv[2])
+          for a in json.load(sys.stdin):
+              if a.get('label') == label and a.get('size') == size:
+                  print(a.get('label'))
+          " "$NAME" "$SIZE")"
           if [[ "$GOT" != "$NAME" ]]; then
-            echo "错误：Release 资产名不对：期望 $NAME，实际 $GOT" >&2
+            echo "错误：Release 资产校验失败：未找到 label=$NAME 且大小一致的资产" >&2
             exit 1
           fi
-          echo "Release 资产已上传：$NAME"
+          echo "Release 资产已上传（label：$NAME；注：GitHub 会剥掉资产 name 里的中文，下载文件名以 name 为准）"
