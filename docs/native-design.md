@@ -182,8 +182,8 @@ PrintExportTests.swift / XlsxTestReader.swift / ReferenceBookFixture.swift
 
 - 工作流 `.github/workflows/build.yml`：**每次推送（main 分支）+ tag（`v*`）都跑**，另保留 `workflow_dispatch` 手动触发。**CI 绿了才发布**。
 - 每次推送都跑编译 + 测试；打 tag 时另出 Release。
-- 步骤：`macos-15` runner → `swift test` → `swift build -c release` → `scripts/bundle.sh`（组装 `.app`：`Contents/MacOS/TXBudget` + `Info.plist`（bundle id `com.zhang.txbudget`（v1.0.2 起保持不变，见 §10.7），`LSMinimumSystemVersion 13.0`，`CFBundleName 滑洲智算`，`CFBundleIconFile AppIcon.icns`）→ `hdiutil` 生成 `.dmg`）→ 上传 artifact；tag 触发时创建 Release，资产 `滑洲智算-<version>-mac-arm64.dmg`（无签名）。
-- **Release 资产名 GitHub 强制 ASCII（v1.0.2 两次验证）**：`softprops/action-gh-release` 与 curl 直调 uploads 端点（`?name=` / `?label=` 均百分号编码）结果相同——GitHub 服务端会把资产 `name` 里的非 ASCII 字符剥掉（`滑洲智算-1.0.2-mac-arm64.dmg` → `-1.0.2-mac-arm64.dmg`），仅 `label` 保留中文全名；PATCH 改名也被服务端静默丢弃。故 Release 步骤不用 softprops，改用 curl 直调 uploads 端点，`?name=` / `?label=` 均传百分号编码后的文件名，上传后校验 `label` 与大小（不校验 `name`）。`workflow_dispatch` 带 `release_tag` 输入时可对已有 tag 补传（不动 tag）。下载文件名以资产 `name` 为准（即 `-1.0.2-mac-arm64.dmg`），bundle 产物与 CI Artifact 里的 DMG 文件名仍为中文全名；如需 Release 下载即中文名，需另议 ASCII 别名方案（待用户定）。
+- 步骤：`macos-15` runner → `swift test` → `swift build -c release` → `scripts/bundle.sh`（组装 `.app`：`Contents/MacOS/TXBudget` + `Info.plist`（bundle id `com.zhang.txbudget`（v1.0.2 起保持不变，见 §10.7），`LSMinimumSystemVersion 13.0`，`CFBundleName 滑洲智算`，`CFBundleIconFile AppIcon.icns`）→ `hdiutil` 生成 `.dmg`）→ 上传 artifact；tag 触发时创建 Release，资产 `huazhou-zhisuan-<version>-mac-arm64.dmg`（拼音 ASCII，见下；无签名）。
+- **Release 资产名用拼音 ASCII（用户 2026-10-18 定）**：GitHub 服务端会把资产 `name` 里的非 ASCII 字符剥掉（v1.0.2 验证：`滑洲智算-1.0.2-mac-arm64.dmg` → `-1.0.2-mac-arm64.dmg`，PATCH 改名也被服务端静默丢弃；且直接调 uploads 端点上传的凭证在本环境被 401 拦截，补传只能走 CI 的 `GITHUB_TOKEN`）。故约定：**Release 资产名 = `huazhou-zhisuan-<version>-mac-arm64.dmg`（拼音，纯 ASCII）**，`label` 同名；上传后校验 `name` + `label` + 大小。`.app`（滑洲智算.app）、DMG 卷名（滑洲智算）、窗口标题、`CFBundleName`（滑洲智算）保持中文不变——GitHub 只剥 Release 资产名，DMG 内部名字不受影响。`workflow_dispatch` 带 `release_tag` 输入时可对已有 tag 补传（不动 tag）。v1.0.2 的 Release 资产已按此约定处理：原 `-1.0.2-mac-arm64.dmg` 删掉，同一 v1.0.2 代码以拼音名重传。
 - 发布：QA 通过后打 tag `v1.0.0`，Release 出 macOS `.dmg`。**不要动 Electron 仓库的任何 tag/Release。**
 - 验证：每次阶段交付后由推送自动触发 CI（编译 + 测试）；发布前用 tag 触发完整流程并核实 Release 资产。
 - **验证分工**：GitHub CI 验的是“能编过 + 逻辑/导出正确”（xcodebuild 编译 + XCTest 单元测试：计算引擎、导出布局对比等）；真机点按走查（界面长什么样、点按顺不顺）仍需用户在 Mac 上做。“编不了”不等于“没法验”——CI 覆盖编译与逻辑验证。
@@ -330,8 +330,8 @@ PrintExportTests.swift / XlsxTestReader.swift / ReferenceBookFixture.swift
   仓库名 `tx-budget-mac` 不动；可执行文件名 `TXBudget` 不动；`TXBudget.version`
   随版本 bump 到 `1.0.2`。
 - **改名清单**：`.app` → `滑洲智算.app`、`CFBundleName` → `滑洲智算`、DMG 卷名 →
-  `滑洲智算`、DMG 文件名 → `滑洲智算-<version>-mac-arm64.dmg`（bundle.sh 现生成
-  `tx-budget-mac-<version>-mac-arm64.dmg`）、窗口标题（ContentView `navigationTitle`）
+  `滑洲智算`、DMG 文件名（Release 资产名）→ `huazhou-zhisuan-<version>-mac-arm64.dmg`
+  （拼音 ASCII，见 §8；`.app`/卷名/`CFBundleName` 保持中文）、窗口标题（ContentView `navigationTitle`）
   → `滑洲智算`、main.swift 启动打印 → `滑洲智算`、XlsxWriter creator 默认值 →
   `滑洲智算`、README 标题、本文档 §8 的 `CFBundleName` / 资产名。
 - **Bundle ID / 数据目录：不改**（已核实，决定照此执行）：
@@ -356,5 +356,5 @@ PrintExportTests.swift / XlsxTestReader.swift / ReferenceBookFixture.swift
   存在且 PNG 魔数正确、iconset 文件名与 `Contents.json` 声明一致、`bundle.sh`
   含 `iconutil` / `CFBundleIconFile` / 新 DMG 文件名（测试用 `#file` 定位仓库根目录，
   不依赖 `swift test` 的 cwd）。
-- **验证**：CI 的 bundle 步骤产出 `滑洲智算-1.0.2-mac-arm64.dmg`；Release 资产名以此为准；
+- **验证**：CI 的 bundle 步骤产出 `huazhou-zhisuan-1.0.2-mac-arm64.dmg`；Release 资产名以此为准（拼音 ASCII）；
   图标最终效果需用户在 Mac 上看（Dock / Finder / 启动台），CI 只能验证 icns 生成成功。

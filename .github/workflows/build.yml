@@ -55,7 +55,7 @@ jobs:
           if [[ -z "$REL" ]]; then
             REL="$(gh api "repos/${{ github.repository }}/releases" -f tag_name="$TAG" -f name="$TAG" -F draft=false -F prerelease=false --jq .id)"
           fi
-          # 删掉同文件名的旧资产与被 GitHub 剥掉中文前缀的错名资产，避免重复。
+          # 删掉与本次文件名不同的旧资产，避免重复。
           DEL_IDS="$(gh api "repos/${{ github.repository }}/releases/$REL/assets" | python3 -c "
           import json, sys
           name = sys.argv[1]
@@ -67,9 +67,9 @@ jobs:
             gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$AID" >/dev/null
           done
           # 上传：资产名与 label 均传百分号编码后的文件名。
-          # 注意：GitHub 服务端会把资产 name 里的非 ASCII 字符剥掉（百分号编码也救不了，
-          # v1.0.2 已两次验证：softprops 与本 curl 路径结果相同），仅 label 保留中文全名。
-          # 故校验以 label + 大小为准，不以 name 为准（见设计文档 §8）。
+          # 命名约定（见设计文档 §8）：资产名用拼音 ASCII（huazhou-zhisuan-<version>-mac-arm64.dmg），
+          # 因为 GitHub 服务端会把资产 name 里的非 ASCII 字符剥掉（v1.0.2 验证过，
+          # 百分号编码也救不了）；拼音名无此问题，校验以 name + label + 大小为准。
           ENC="$(python3 -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe="-._"))' "$NAME")"
           curl -sS -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Content-Type: application/octet-stream" \
             --data-binary @"$DMG" \
@@ -79,13 +79,13 @@ jobs:
           import json, sys
           label, size = sys.argv[1], int(sys.argv[2])
           for a in json.load(sys.stdin):
-              if a.get('label') == label and a.get('size') == size:
+              if a.get('label') == label and a.get('name') == label and a.get('size') == size:
                   print(a.get('label'))
           " "$NAME" "$SIZE")"
           if [[ "$GOT" != "$NAME" ]]; then
-            echo "错误：Release 资产校验失败：未找到 label=$NAME 且大小一致的资产" >&2
+            echo "错误：Release 资产校验失败：未找到 name=label=$NAME 且大小一致的资产" >&2
             exit 1
           fi
           # 注意：echo 里的变量必须用 ${NAME} 花括号定界——macOS /bin/bash 3.2 会把
           # $NAME 后紧跟的全角标点误解析为变量名的一部分（v1.0.2 补传踩过此坑）。
-          echo "Release 资产已上传（label：${NAME}；注：GitHub 会剥掉资产 name 里的中文，下载文件名以 name 为准）"
+          echo "Release 资产已上传（name/label：${NAME}；资产名用拼音 ASCII，下载文件名即此名）"

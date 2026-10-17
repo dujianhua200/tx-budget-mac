@@ -63,7 +63,9 @@ final class BrandingTests: XCTestCase {
         XCTAssertTrue(script.contains("CFBundleIconFile"), "bundle.sh 的 Info.plist 缺 CFBundleIconFile")
         XCTAssertTrue(script.contains("AppIcon.icns"), "bundle.sh 的 Info.plist 图标文件名不对")
         XCTAssertTrue(script.contains("滑洲智算.app"), "bundle.sh 未改 .app 名")
-        XCTAssertTrue(script.contains("滑洲智算-${VERSION}-mac-arm64.dmg"), "bundle.sh 未改 DMG 文件名")
+        XCTAssertTrue(script.contains("huazhou-zhisuan-${VERSION}-mac-arm64.dmg"), "bundle.sh 未改 DMG 文件名为拼音名")
+        XCTAssertTrue(script.contains("-volname \"滑洲智算\""), "bundle.sh 改了 DMG 卷名（卷名保持中文）")
+        XCTAssertTrue(script.contains("<string>滑洲智算</string>"), "bundle.sh 改了 CFBundleName（保持中文）")
         XCTAssertTrue(script.contains("com.zhang.txbudget"), "bundle.sh 改了 Bundle ID（不许改）")
         XCTAssertFalse(script.contains("通信概预算.app"), "bundle.sh 仍有旧 .app 名")
     }

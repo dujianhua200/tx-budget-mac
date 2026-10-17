@@ -1,5 +1,7 @@
 #!/bin/bash
-# 组装 .app + .dmg（无签名）。输入：.build/release/TXBudget；输出：build/滑洲智算-<version>-mac-arm64.dmg
+# 组装 .app + .dmg（无签名）。输入：.build/release/TXBudget；输出：build/huazhou-zhisuan-<version>-mac-arm64.dmg
+# 命名约定（见 docs/native-design.md §8）：DMG 文件名（Release 资产名）用拼音 ASCII，
+# 因为 GitHub 会剥掉 Release 资产名里的非 ASCII 字符；.app / 卷名 / CFBundleName 保持中文。
 # 图标：Assets/AppIcon.iconset（已提交进仓库）→ iconutil 生成 .icns；失败即停，不出无图标包。
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -15,7 +17,7 @@ if [[ -z "${VERSION:-}" ]]; then
 fi
 
 APP_DIR="build/滑洲智算.app"
-DMG="build/滑洲智算-${VERSION}-mac-arm64.dmg"
+DMG="build/huazhou-zhisuan-${VERSION}-mac-arm64.dmg"
 rm -rf "$APP_DIR" "$DMG"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 
