@@ -21,18 +21,49 @@ struct SeedRuleJSON: Decodable {
     var variant: String
 }
 
+/// rateGrid 单元格：数值 / 字符串（表头/标签）/ null。
+/// JS 的 rateGridToRates 对非数值单元格走 numOr(v, 0) 回落为 0，此处字符串 → nil → 0，与之一致。
+enum SeedCell: Decodable {
+    case number(Double)
+    case text(String)
+    case null
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if c.decodeNil() {
+            self = .null
+        } else if let d = try? c.decode(Double.self) {
+            self = .number(d)
+        } else if let s = try? c.decode(String.self) {
+            self = .text(s)
+        } else {
+            self = .null
+        }
+    }
+
+    var doubleValue: Double? {
+        if case .number(let d) = self { return d }
+        return nil
+    }
+}
+
 struct SeedFixture: Decodable {
     var quotas: [Quota]
     var materials_jia: [SeedMaterialJSON]
     var materials_yi: [SeedMaterialJSON]
     var materials_equip: [SeedMaterialJSON]
-    var rateGrid: [[Double?]]
+    var rateGrid: [[SeedCell]]
     var winterTable: [String: Double]
     var machinePrices: [MachinePrice]
     var instrumentPrices: [InstrumentPrice]
     var quotaMachines: [QuotaMachine]
     var quotaInstruments: [QuotaInstrument]
     var rules: [SeedRuleJSON]
+
+    /// rateGrid 转 [[Double?]]（字符串/null → nil，消费方再按 JS numOr 回落为 0）。
+    var rateGridNumbers: [[Double?]] {
+        rateGrid.map { row in row.map { $0.doubleValue } }
+    }
 }
 
 func loadSeed() -> SeedFixture {
@@ -63,7 +94,7 @@ func seedRules(_ seed: SeedFixture) -> [Rule] {
 /// JS engine.test.mjs 的 libs：只有 rateGrid（无 winterTable、无 rates）→ 冬雨季费率 0。
 func engineLibs(from seed: SeedFixture) -> Libs {
     Libs(quotas: seed.quotas, materials: seedMaterials(seed), rules: seedRules(seed),
-         rateGrid: seed.rateGrid,
+         rateGrid: seed.rateGridNumbers,
          machinePrices: seed.machinePrices, instrumentPrices: seed.instrumentPrices,
          quotaMachines: seed.quotaMachines, quotaInstruments: seed.quotaInstruments)
 }
@@ -71,7 +102,7 @@ func engineLibs(from seed: SeedFixture) -> Libs {
 /// JS discount.test.mjs / crosscheck.test.mjs 的 libsGrid：rateGrid + winterTable。
 func gridLibs(from seed: SeedFixture) -> Libs {
     Libs(quotas: seed.quotas, materials: seedMaterials(seed), rules: seedRules(seed),
-         winterTable: seed.winterTable, rateGrid: seed.rateGrid,
+         winterTable: seed.winterTable, rateGrid: seed.rateGridNumbers,
          machinePrices: seed.machinePrices, instrumentPrices: seed.instrumentPrices,
          quotaMachines: seed.quotaMachines, quotaInstruments: seed.quotaInstruments)
 }
@@ -79,7 +110,7 @@ func gridLibs(from seed: SeedFixture) -> Libs {
 /// JS profileToLibs(seedToProfile(seed)) 的形状：具名费率（由 rateGrid 转换）+ winterTable + 增值税率。
 func namedLibs(from seed: SeedFixture, discountRule: DiscountRule? = nil) -> Libs {
     var libs = gridLibs(from: seed)
-    libs.rates = Rates(byProjectType: rateGridToRates(seed.rateGrid),
+    libs.rates = Rates(byProjectType: rateGridToRates(seed.rateGridNumbers),
                        winterTable: seed.winterTable,
                        vatRates: VatRates(jiaTax: 0.13, yiTax: 0.09, outputTax: 0.09, safetyVat: 0))
     libs.discountRule = discountRule

@@ -13,7 +13,7 @@ final class RatesTests: XCTestCase {
 
     func testRateGridToRates() {
         let seed = loadSeed()
-        let byType = rateGridToRates(seed.rateGrid)
+        let byType = rateGridToRates(seed.rateGridNumbers)
         // seed rateGrid 第 4 行（gridN=3，技工费）G..K 列全为 114。
         XCTAssertEqual(byType["通信线路工程"]?.techPrice, 114)
         XCTAssertEqual(byType["通信管道工程"]?.techPrice, 114)
@@ -87,10 +87,12 @@ final class RatesTests: XCTestCase {
 
     func testRounding() {
         XCTAssertEqual(r2(2.4168), 2.42, accuracy: 0.000001)
-        XCTAssertEqual(r2(72343.775), 72343.78, accuracy: 0.000001)
+        // 注意：72343.775 的 Double 实际为 72343.774999999994179，r2 得 72343.77
+        //（JS 测试里写 72343.78 是靠 0.011 容差过的，Node 实测 JS r2 同样得 72343.77）。
+        XCTAssertEqual(r2(72343.775), 72343.77, accuracy: 0.000001)
         XCTAssertEqual(r2(0), 0)
-        // 100.005 的 Double 实际略小于 100.005，故 JS/Swift 的 r2 都给出 100.0（非 100.01）。
-        XCTAssertEqual(r2(100.005), 100.0, accuracy: 0.000001)
+        // 100.005 的 Double 实际略高于 100.005，r2 得 100.01（Node 实测 JS r2 同样得 100.01）。
+        XCTAssertEqual(r2(100.005), 100.01, accuracy: 0.000001)
         XCTAssertEqual(num(nil), 0)
         XCTAssertEqual(num(Double.nan), 0)
         XCTAssertEqual(num(5), 5)
