@@ -131,7 +131,7 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
-        .navigationTitle("通信概预算")
+        .navigationTitle(appDisplayName)
     }
 }
 

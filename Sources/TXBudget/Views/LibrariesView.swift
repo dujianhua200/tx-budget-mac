@@ -15,8 +15,26 @@ struct LibrariesView: View {
                 .font(.headline)
             Text("正在编辑方案：\(appState.editingProfile?.name ?? "—")（编辑目标）；新建工程默认方案不受这里影响。")
                 .foregroundColor(.secondary).font(.caption)
-            Text("Excel 导入/导出在后续阶段实现（需 xlsx 读写）。")
-                .foregroundColor(.secondary).font(.caption)
+            if let kind = ImportLibraryKind(libraryViewKey: viewKey) {
+                ExcelImportExportButtons(
+                    kind: kind,
+                    profileName: appState.editingProfile?.name ?? "—",
+                    existingRows: { [appState] in
+                        existingImportRows(kind: kind, profile: appState.editingProfile ?? ConfigurationProfile())
+                    },
+                    onConfirmImport: { classification, decisions, rowsBefore in
+                        applyLibraryImport(appState: appState, kind: kind,
+                                           classification: classification, decisions: decisions,
+                                           rowsBefore: rowsBefore)
+                    },
+                    exportRows: { [appState] in
+                        existingImportRows(kind: kind, profile: appState.editingProfile ?? ConfigurationProfile())
+                    },
+                    onExported: { url in
+                        appState.showToast("已导出：\(url.lastPathComponent)")
+                    }
+                )
+            }
             DictTableView(
                 columns: LibraryRowCodec.columns(for: viewKey),
                 rowDicts: rowDicts,

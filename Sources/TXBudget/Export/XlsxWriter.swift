@@ -277,7 +277,7 @@ func formatDouble(_ v: Double) -> String {
 public struct XlsxWorkbook {
     public var sheets: [XlsxSheet]
     public var creator: String
-    public init(sheets: [XlsxSheet] = [], creator: String = "通信概预算") {
+    public init(sheets: [XlsxSheet] = [], creator: String = appDisplayName) {
         self.sheets = sheets; self.creator = creator
     }
 

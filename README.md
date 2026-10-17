@@ -1,4 +1,4 @@
-# 通信概预算 · Mac 原生应用
+# 滑洲智算 · Mac 原生应用
 
 Swift + SwiftUI 重写，Mac 专用。Electron 版（`dujianhua200/tx-budget`，v3.0.0）保持原样、只出 Windows 版；本仓库不碰 Electron 仓库的任何 tag/Release。
 

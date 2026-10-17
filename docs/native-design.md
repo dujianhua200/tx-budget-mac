@@ -182,7 +182,7 @@ PrintExportTests.swift / XlsxTestReader.swift / ReferenceBookFixture.swift
 
 - 工作流 `.github/workflows/build.yml`：**每次推送（main 分支）+ tag（`v*`）都跑**，另保留 `workflow_dispatch` 手动触发。**CI 绿了才发布**。
 - 每次推送都跑编译 + 测试；打 tag 时另出 Release。
-- 步骤：`macos-15` runner → `swift test` → `swift build -c release` → `scripts/bundle.sh`（组装 `.app`：`Contents/MacOS/TXBudget` + `Info.plist`（bundle id `com.zhang.txbudget`，`LSMinimumSystemVersion 13.0`，`CFBundleName 通信概预算`）→ `hdiutil` 生成 `.dmg`）→ 上传 artifact；tag 触发时创建 Release（`softprops/action-gh-release`），资产 `tx-budget-mac-<version>-mac-arm64.dmg`（无签名）。
+- 步骤：`macos-15` runner → `swift test` → `swift build -c release` → `scripts/bundle.sh`（组装 `.app`：`Contents/MacOS/TXBudget` + `Info.plist`（bundle id `com.zhang.txbudget`（v1.0.2 起保持不变，见 §10.7），`LSMinimumSystemVersion 13.0`，`CFBundleName 滑洲智算`，`CFBundleIconFile AppIcon.icns`）→ `hdiutil` 生成 `.dmg`）→ 上传 artifact；tag 触发时创建 Release（`softprops/action-gh-release`），资产 `滑洲智算-<version>-mac-arm64.dmg`（无签名）。
 - 发布：QA 通过后打 tag `v1.0.0`，Release 出 macOS `.dmg`。**不要动 Electron 仓库的任何 tag/Release。**
 - 验证：每次阶段交付后由推送自动触发 CI（编译 + 测试）；发布前用 tag 触发完整流程并核实 Release 资产。
 - **验证分工**：GitHub CI 验的是“能编过 + 逻辑/导出正确”（xcodebuild 编译 + XCTest 单元测试：计算引擎、导出布局对比等）；真机点按走查（界面长什么样、点按顺不顺）仍需用户在 Mac 上做。“编不了”不等于“没法验”——CI 覆盖编译与逻辑验证。
@@ -200,3 +200,160 @@ PrintExportTests.swift / XlsxTestReader.swift / ReferenceBookFixture.swift
 
 - 每个阶段交付时附：改了什么、测试通过数、提交 SHA、CI 状态。最终汇报同前。
 - **实机点按走查由用户做**（CI 验的是能编过 + 逻辑/导出正确；界面长什么样、点按顺不顺仍需用户真机验收——如实说明，不许声称本地验过界面）。
+
+## 10. v1.0.2：xlsx 导入（镜像 Electron 行为）
+
+> 对照源文件（只读，永不修改）：`~/workspace/budget-app/electron/excel.cjs`
+> （`importQuantities / importLibrary / exportLibrary / EXCEL_COLUMNS`）、
+> `~/workspace/budget-app/src/lib/libraryOps.js`
+> （`classifyImport / applyImport / validateRow / normalizeImportedRows`）、
+> `~/workspace/budget-app/src/components/ImportDiffPreview.jsx`（差异预览 UX）、
+> `~/workspace/budget-app/src/pages/Settings.jsx`（库导入/导出接线）、
+> `~/workspace/budget-app/src/pages/Batch.jsx`（批量导入接线）。
+> Electron 的 `importQuotas / exportQuotas` 旧位置回落逻辑在 UI 层无调用，是遗留路径——
+> 以 `importLibrary` 为准，不复刻旧位置回落。
+
+### 10.1 数据模型
+
+- **读入值** `ImportValue`（`Logic/LibraryImport.swift`）：`text / number / bool / null`
+  四态，对应 ExcelJS 单元格值（字符串 / 数字 / 布尔 / 空）。日期型单元格解析为 `Date`
+  后按 JS 语义转换：`Number(Date)` = 毫秒时间戳；`String(Date)` 用 `yyyy-MM-dd`
+  （与 JS `Date.toString` 格式不同，仅影响日期型单元格进文本列的极端情况，已记录为已知偏差）。
+- **JS 数值语义**：文本 → 数字用 `jsNumberFromString`（trim 后空串 → 0、十六进制 `0x` /
+  `0b` / `0o`、Infinity、其余走 `Double`，非法 → NaN）；数字 → 字符串复用既有
+  `jsNumberString`（整数无小数点）。`Number(v) || 0 / || 1` 的 NaN/0 回落逐字镜像。
+- **导入行** `ImportRow`：`id` + `fields: [String: ImportValue]` + 可选 `rateIdentity`
+ （费率行由 `resolveRateIdentity` 补 `_section/_type/_key`，与 Electron 的
+  `normalizeImportedRows` 一致）。业务主键 = `businessKeyFields` 各字段 `normStr` 以
+  `\0` 连接（`normStr`：null → `""`，其余 `String(v).trim()`）。
+
+### 10.2 xlsx 读取（`Export/XlsxReader.swift`，无第三方库）
+
+- **ZIP**：解析中央目录（EOCD → 中央目录条目，含真实压缩/未压缩大小，可处理
+  data descriptor），支持方法 0（stored）与 8（deflate）；不支持加密 / ZIP64，
+  报错为文件级错误。
+- **DEFLATE**：纯 Swift 实现（stored / 固定 Huffman / 动态 Huffman 三种块 + 滑动窗口），
+  不引 CZlib/system library——SwiftPM 的 systemLibrary 在 macOS runner 上需 pkg-config，
+  脆弱；纯 Swift 两平台同一代码路径，可单测。解压后按中央目录的未压缩大小校验长度。
+- **OOXML**：`xl/workbook.xml` + `xl/_rels/workbook.xml.rels`（工作表名与目标）+
+  `xl/sharedStrings.xml`（`t="s"`）+ `xl/styles.xml`（自定义 `numFmts` + `cellXfs`，
+  用于日期格式识别）+ 各工作表 XML。单元格类型：`s`（共享字符串）、`inlineStr`
+  （多 `<t>` 拼接）、`b`（布尔）、无 `t`（数值；日期格式
+  → Excel 序号转 `Date`，标准公式 `(serial - 25569) * 86400`）、`e`（错误值 → 空白）。
+  **含 `<f>` 的单元格一律按公式对象语义处理，不取 `<v>` 缓存值**：ExcelJS 读出的是
+  `{formula, result}` 对象，`Number → NaN`、`String → "[object Object]"`（实测：简易表
+  数量列写公式 `=1+2` 时 Electron 丢弃该行，原生必须一致，否则行集合不同）。
+  内置日期 `numFmtId`：14–22、27–36、45–47、49、50、57；
+  自定义格式启发式：去引号/`[...]` 后含 `y/m/d/h` 日期令牌。
+- **错误**：非 ZIP / 解压失败 / XML 解析失败 → 文件级错误
+  `文件打不开（<文件名>）：<原因>`；工作表数为 0 → `文件无工作表`。
+
+### 10.3 库导入 / 导出（`importLibrary / exportLibrary` 镜像）
+
+- **列规格** `ExcelColumnSpec`：逐字取自 `EXCEL_COLUMNS`（header / aliases / required /
+  type / select options）。注意导出/导入表头用 Electron 表头（定额 `技工 / 普工 / 分册名称`），
+  不是原生界面表头（`技工/单位 / 普工/单位 / 分册`）；导入时两者都接受（aliases）。
+  规则两视图解析阶段的 `类型` 选项取全集（变体 / 变体* / 通用 / 备选），分类阶段再按
+  视图列校验（`rulesVariant` 仅前三项、`rulesAlt` 仅备选）——与 Electron
+  （解析用 `EXCEL_COLUMNS`、分类用 `view.columns`）一致。
+- **解析**：首行表头匹配（aliases 兜底）；缺必填列 → 文件级错误
+  `表头缺失必填列：…（首行应为：…）`，不返回行；number 列非数字 → 行错误；
+  checkbox 按 `是/否/true/false/1/0/启用/禁用`（含大小写 `TRUE/FALSE`）反向解析，
+  空 → `true`（Electron 默认），非法 → 行错误；select 非法取值 → 行错误；
+  必填空 → 行错误；错误格式 `第 N 行：…`（多条以 `；` 连接）；行级错误行不进 `rows`；
+  全空行跳过。解析错误与分类错误分开存放（`parseErrors` / 分组内 `errors`）。
+- **分类**（`classifyImport` 镜像）：added / updated（字段级 diff，跳过 readonly 列）
+  / skipped / errors；文件内业务主键重复 → 错误（含该行自身校验错误 + 重复提示）；
+  费率视图 `数值` 为空视为不参与 diff（保留旧值——按 `libraryOps.js` 注释与任务要求；
+  注意 Electron 代码实际会在此情形下产生 `to=null` 的 diff，原生按注释意图实现，
+  与代码有此一处有意偏差）；费率未知项目 → `未知费率项目“…”` 错误；
+  规则行缺 `kind` 时补视图默认（变体视图 → 变体，备选视图 → 备选）。
+- **落库**（`applyImport` 镜像）：merge（新增逐条勾选默认全选、更新逐字段勾选默认全采用，
+  未勾选不写）；replace = **added + updated**（skipped 行不计入，与 Electron 测试
+  `替换后行数 = 文件有效行` 一致），替换保留旧 `id`（按业务主键匹配），新增补 `newUID()`。
+  费率视图 replace 只写回 added + updated 行（其余费率保持原值，与 Electron
+  `setRows` 逐行写回一致）；费率视图不提供 replace 选项（Electron `allowReplace=false`）。
+- **写回**（`existingImportRows / writeImportRows`）：库表行 ↔ `ImportRow` 双向转换；
+  规则两视图只替换本视图切片（另一视图行不动）；表五保留原 `children`，且表五行 id
+  取 `key`（原生既有约定；Electron 表五行无 id，合并更新时 `r.id === undefined`
+  会误匹配首行，原生不复刻该 bug）；费率按
+  `_section/_type/_key` 写回 `rates`（`winterTable` 的 null = 删键；`byProjectType`
+  的 null = 显式 nil，查表语义不变）。非可选数值列的 null 落库时按原生既有约定归 0
+  （与 `LibraryRowCodec.commit` 一致）。
+- **导出**：`exportLibraryWorkbook` 经既有 `XlsxWriter`（stored 条目）：工作表名 `Sheet1`、
+  列宽 18、首行加粗、checkbox 列写 `是/否`、空写空白格；定额库导出列与导入列一致。
+  导出 → 导入往返行集合相等（单测覆盖全部 11 种库）。
+
+### 10.4 工程量导入（`importQuantities` 镜像）
+
+- **v3**：工作表 `工程量` 存在且首表 A1 ≠ `工程名称` 时：首行 B~J（2~10 列）为最多 9 个
+  工程名；第 4 行起 B=定额编号、C=变体（**不 trim**，与 Electron `String(variant ?? '')`
+  一致）、E~M（`5+p` 列）= 各工程数量；`code && qty`（qty = `Number(...) || 0`）才收，
+  `coef=1`；有工程才返回 `v3`，否则继续按简易格式解析首表。
+- **简易**：首表第 2 行起：A=工程名、B=定额编号、C=项目名称（不 trim）、D=数量、
+  E=工日系数（`Number(...) || 1`）；三者齐全才收，按工程名分组（保持首次出现顺序）。
+  数量为 0 的行不收。
+- **BatchView 接线**：解析后按工程名生成工程（`newProject`，插入到列表最前，与批量新建一致）；
+  单位/系数按 Electron `Batch.jsx` 解析：短单（code + variant 匹配）→ 定额库（code 匹配）
+  → 空，`coef = q.coef || short.coef || 1`。导入后显示“撤销导入”按钮（删除本次导入的工程；
+  原生无全局撤销栈，与既有删除行为一致）。未识别到工程时提示支持的两种格式。
+
+### 10.5 界面接线（SwiftUI，`#if os(macOS)`）
+
+- **通用组件** `Views/ImportDiffView.swift`：`ExcelImportExportButtons`（导入/导出按钮 +
+  解析 + 预览 sheet 状态机）+ `ImportDiffSheet`（新增/更新/跳过/错误四组 +
+  合并/替换单选 + 替换输方案名确认 + 错误知晓勾选 → 确认落库）。
+  确认禁用条件：有错误且未勾选知晓；replace 模式且输入 ≠ 当前方案名。
+  解析结果 `rows` 为空且有错误 → 直接弹错误提示，不开预览（与 Electron `Settings.jsx` 一致）。
+- **LibrariesView**：9 种库各加导入/导出；替换走 `updateDb(major: true)`（重大操作备份）。
+- **FeeRulesView**：表五费用加导入/导出；费率加导入/导出（仅合并模式，无替换）。
+- **BatchView**：“选择 Excel 文件导入”改为真实流程（选文件 → 解析 → 生成工程 → 可撤销）。
+
+### 10.6 测试（`Tests/TXBudgetTests/XlsxImportTests.swift`）
+
+- 真实 DEFLATE 夹具（Python `zipfile` DEFLATE 生成，存入 `Tests/Fixtures/`）：
+  共享字符串版定额表、别名表头版、inlineStr 版材料表、表五（含 `是/否` 与非法布尔）、
+  费率（含空数值）、v3 工程量、简易工程量（含公式缓存值）、缺列版、无工作表版。
+  证明读的不是只有 stored 条目；另有导出（stored）→ 导入往返测试覆盖 stored 路径。
+- 覆盖：导出 → 导入往返一致（11 种库）；合并/替换语义（新增逐条、更新逐字段、
+  跳过、文件内主键重复、替换保留 id）；错误用例（坏文件、无工作表、缺必填列、
+  行级 number/checkbox/select 错误）；v3 + 简易工程量导入；费率空数值不参与 diff、
+  未知费率项目归错误；与 Electron 同一夹具的导入结果逐项对照（Electron 侧用
+  `node` 跑 `excel.cjs` / `libraryOps.js` 得期望值）。
+- 本 VM 无 Swift 工具链：Swift 编译 + 测试走 GitHub CI；Electron 对照在本地跑。
+
+### 10.7 图标 + 改名（随 v1.0.2 同版发布，用户 2026-10-17 定）
+
+- **新名**：`滑洲智算`。单一事实源 `Logic/Branding.swift` 的 `appDisplayName`
+  （窗口标题、启动打印、xlsx `creator` 默认值都引用它，不许各处散落硬编码旧名）。
+  仓库名 `tx-budget-mac` 不动；可执行文件名 `TXBudget` 不动；`TXBudget.version`
+  随版本 bump 到 `1.0.2`。
+- **改名清单**：`.app` → `滑洲智算.app`、`CFBundleName` → `滑洲智算`、DMG 卷名 →
+  `滑洲智算`、DMG 文件名 → `滑洲智算-<version>-mac-arm64.dmg`（bundle.sh 现生成
+  `tx-budget-mac-<version>-mac-arm64.dmg`）、窗口标题（ContentView `navigationTitle`）
+  → `滑洲智算`、main.swift 启动打印 → `滑洲智算`、XlsxWriter creator 默认值 →
+  `滑洲智算`、README 标题、本文档 §8 的 `CFBundleName` / 资产名。
+- **Bundle ID / 数据目录：不改**（已核实，决定照此执行）：
+  持久化不用 bundle ID 定位数据文件——数据目录是硬编码
+  `DatabaseStore.appSupportDirName = "通信概预算"` →
+  `~/Library/Application Support/通信概预算/budget-data.json`（与 Electron 共享）；
+  源码里无 UserDefaults / keychain / bundleIdentifier 依赖。
+  所以 **Bundle ID 保持 `com.zhang.txbudget` 不变，数据目录名保持 `通信概预算` 不变**，
+  零迁移、用户现有数据不丢。SettingsView 里数据文件路径文案保持原样（目录没变）。
+  不要为改名而动数据目录。
+- **图标**：母图 `Assets/huazhou-zhisuan-icon-master.webp`（1600×1600 RGB，由用户提供的
+  WebP 原样拷贝）；`Assets/AppIcon.iconset/` 下标准 10 件 PNG（16 / 16@2x / 32 / 32@2x /
+  128 / 128@2x / 256 / 256@2x / 512 / 512@2x，即像素 16/32/32/64/128/256/256/512/512/1024）
+  + `Contents.json`，全部提交进仓库（`iconutil` 只在 macOS CI 上有，CI 现场生成来不及，
+  必须靠提交的 PNG）。
+- **打包**：`bundle.sh` 在组装 `.app` 后用 `iconutil -c icns Assets/AppIcon.iconset`
+  生成 `Contents/Resources/AppIcon.icns`；`Info.plist` 加
+  `CFBundleIconFile = AppIcon.icns`；`iconutil` 失败 / icns 为空 / Info.plist 无图标入口
+  → 打包直接失败（不许静默出无图标包）。
+- **测试**：`BrandingTests` 断言 `appDisplayName == "滑洲智算"`、`XlsxWorkbook` 默认
+  creator、`TXBudget.version == "1.0.2"`；另断言 iconset 10 件 PNG + `Contents.json`
+  存在且 PNG 魔数正确、iconset 文件名与 `Contents.json` 声明一致、`bundle.sh`
+  含 `iconutil` / `CFBundleIconFile` / 新 DMG 文件名（测试用 `#file` 定位仓库根目录，
+  不依赖 `swift test` 的 cwd）。
+- **验证**：CI 的 bundle 步骤产出 `滑洲智算-1.0.2-mac-arm64.dmg`；Release 资产名以此为准；
+  图标最终效果需用户在 Mac 上看（Dock / Finder / 启动台），CI 只能验证 icns 生成成功。

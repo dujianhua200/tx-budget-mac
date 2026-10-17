@@ -1,8 +1,7 @@
 #if os(macOS)
 import SwiftUI
 
-/// 批量生成：批量新建 / 批量改价 / 批量改折扣 / 批量删除。
-/// 批量导入/导出 Excel 在后续阶段实现（需 xlsx 读写）。
+/// 批量生成：批量新建 / Excel 批量导入工程量 / 批量改价 / 批量改折扣 / 批量删除。
 struct BatchView: View {
     @EnvironmentObject private var appState: AppState
     @State private var names = ""
@@ -14,6 +13,9 @@ struct BatchView: View {
     @State private var discount = 1.0
     @State private var message = ""
     @State private var showDeleteConfirm = false
+    /// 本次导入新建的工程 id（撤销导入时删除；原生无全局撤销栈，与删除行为一致）。
+    @State private var lastImportIds: [String] = []
+    @State private var importAlert: String?
 
     var body: some View {
         ScrollView {
@@ -43,10 +45,20 @@ struct BatchView: View {
                 }
                 GroupBox("② 从 Excel 批量导入工程量") {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("支持 v3.0 母版“工程量”表与简易四列表。Excel 导入在后续阶段实现。")
+                        Text("支持 v3.0 母版“工程量”表与简易四列表（工程名称/定额编号/项目名称/数量/工日系数）。")
                             .foregroundColor(.secondary).font(.caption)
-                        Button("选择 Excel 文件导入") { appState.showToast("Excel 导入在后续阶段实现") }
-                            .disabled(true)
+                        HStack {
+                            Button("选择 Excel 文件导入") { importQuantities() }
+                                .buttonStyle(.borderedProminent)
+                            if !lastImportIds.isEmpty {
+                                Button("撤销导入（删除本次导入的 \(lastImportIds.count) 个工程）") {
+                                    appState.deleteProjects(lastImportIds)
+                                    lastImportIds = []
+                                    message = "已撤销导入。"
+                                }
+                                .tint(.red)
+                            }
+                        }
                     }
                 }
                 GroupBox("③ 批量改价 / 改费率（勾选下方工程后应用）") {
@@ -107,6 +119,14 @@ struct BatchView: View {
                 .frame(minHeight: 200)
             }
         }
+        .alert("导入", isPresented: Binding(
+            get: { importAlert != nil },
+            set: { if !$0 { importAlert = nil } }
+        )) {
+            Button("知道了") { importAlert = nil }
+        } message: {
+            Text(importAlert ?? "")
+        }
         .alert("删除选中的 \(selected.count) 个工程？", isPresented: $showDeleteConfirm) {
             Button("取消", role: .cancel) {}
             Button("确认删除", role: .destructive) {
@@ -121,6 +141,44 @@ struct BatchView: View {
 
     private var libraries: LibrarySet {
         appState.editingProfile?.libraries ?? LibrarySet()
+    }
+
+    /// 从 Excel 批量导入工程量（镜像 Electron `Batch.jsx` 的 importExcel）。
+    /// 单位/系数按激活方案的库解析：短单（code + variant）→ 定额库（code）→ 空；
+    /// coef = q.coef || short.coef || 1（0 均按空处理）。
+    private func importQuantities() {
+        guard let url = FilePanel.openFile(allowedTypes: ["xlsx"], message: "选择要导入的 Excel 文件") else { return }
+        guard let data = try? Data(contentsOf: url) else {
+            importAlert = "文件读不出来：\(url.lastPathComponent)"
+            return
+        }
+        let result: QuantitiesImportResult
+        do {
+            result = try parseQuantitiesFile(data: data)
+        } catch {
+            importAlert = "导入解析失败：\(error.localizedDescription)"
+            return
+        }
+        guard !result.projects.isEmpty else {
+            importAlert = "该文件未识别到工程量：支持 v3.0 母版“工程量”表，或简易四列（工程名称/定额编号/项目名称/数量/工日系数）。"
+            return
+        }
+        let libs = activeProfile(appState.db)?.libraries ?? LibrarySet()
+        var created: [ProjectRecord] = []
+        for p in result.projects {
+            var np = newProject(appState.db, name: p.name)
+            np.quantities = p.quantities.map { q in
+                let short = libs.shortlist.first { $0.code == q.quota && $0.name == q.variant }
+                let quota = libs.quotas.first { $0.code == q.quota }
+                let coef = q.coef != 0 ? q.coef : ((short?.coef ?? 0) != 0 ? (short?.coef ?? 0) : 1)
+                return QuantityRow(id: newUID(), quota: q.quota, variant: q.variant,
+                                   unit: short?.unit ?? quota?.unit ?? "", qty: q.qty, coef: coef)
+            }
+            created.append(np)
+        }
+        appState.updateDb { d in d.projects.insert(contentsOf: created, at: 0) }
+        lastImportIds = created.map { $0.id }
+        message = "已从 \(result.kind == .v3 ? "v3.0 母版" : "简易表格") 导入 \(created.count) 个工程。"
     }
 
     private func batchCreate() {

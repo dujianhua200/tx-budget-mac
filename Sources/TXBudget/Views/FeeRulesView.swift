@@ -31,6 +31,25 @@ struct FeeRulesView: View {
 
     private var ratesView: some View {
         VStack(alignment: .leading, spacing: 8) {
+            ExcelImportExportButtons(
+                kind: .rates,
+                profileName: appState.editingProfile?.name ?? "—",
+                allowReplace: false,
+                existingRows: { [appState] in
+                    existingImportRows(kind: .rates, profile: appState.editingProfile ?? ConfigurationProfile())
+                },
+                onConfirmImport: { classification, decisions, rowsBefore in
+                    applyLibraryImport(appState: appState, kind: .rates,
+                                       classification: classification, decisions: decisions,
+                                       rowsBefore: rowsBefore)
+                },
+                exportRows: { [appState] in
+                    existingImportRows(kind: .rates, profile: appState.editingProfile ?? ConfigurationProfile())
+                },
+                onExported: { url in
+                    appState.showToast("已导出：\(url.lastPathComponent)")
+                }
+            )
             Text("金额列取自\(feeExampleProjectName)的折前表二。")
                 .foregroundColor(.secondary).font(.caption)
             FeeTreeTableView(
@@ -75,6 +94,30 @@ struct FeeRulesView: View {
     // MARK: - 表五费用
 
     private var table5FeesView: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ExcelImportExportButtons(
+                kind: .table5Fees,
+                profileName: appState.editingProfile?.name ?? "—",
+                existingRows: { [appState] in
+                    existingImportRows(kind: .table5Fees, profile: appState.editingProfile ?? ConfigurationProfile())
+                },
+                onConfirmImport: { classification, decisions, rowsBefore in
+                    applyLibraryImport(appState: appState, kind: .table5Fees,
+                                       classification: classification, decisions: decisions,
+                                       rowsBefore: rowsBefore)
+                },
+                exportRows: { [appState] in
+                    existingImportRows(kind: .table5Fees, profile: appState.editingProfile ?? ConfigurationProfile())
+                },
+                onExported: { url in
+                    appState.showToast("已导出：\(url.lastPathComponent)")
+                }
+            )
+            table5FeesTable
+        }
+    }
+
+    private var table5FeesTable: some View {
         DictTableView(
             columns: LibraryRowCodec.table5Columns,
             rowDicts: LibraryRowCodec.table5Dicts(appState.editingProfile?.table5Fees ?? []),
@@ -107,6 +150,30 @@ struct FeeRulesView: View {
     // MARK: - 关联规则（备选）
 
     private var rulesAltView: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ExcelImportExportButtons(
+                kind: .rulesAlt,
+                profileName: appState.editingProfile?.name ?? "—",
+                existingRows: { [appState] in
+                    existingImportRows(kind: .rulesAlt, profile: appState.editingProfile ?? ConfigurationProfile())
+                },
+                onConfirmImport: { classification, decisions, rowsBefore in
+                    applyLibraryImport(appState: appState, kind: .rulesAlt,
+                                       classification: classification, decisions: decisions,
+                                       rowsBefore: rowsBefore)
+                },
+                exportRows: { [appState] in
+                    existingImportRows(kind: .rulesAlt, profile: appState.editingProfile ?? ConfigurationProfile())
+                },
+                onExported: { url in
+                    appState.showToast("已导出：\(url.lastPathComponent)")
+                }
+            )
+            rulesAltTable
+        }
+    }
+
+    private var rulesAltTable: some View {
         DictTableView(
             columns: LibraryRowCodec.columns(for: .rulesAlt),
             rowDicts: LibraryRowCodec.dicts(for: .rulesAlt, profile: appState.editingProfile ?? ConfigurationProfile()),
