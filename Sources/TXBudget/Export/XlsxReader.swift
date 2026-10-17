@@ -390,7 +390,7 @@ private func parseXml(_ data: Data, part: String) throws -> XmlNode {
     let parser = XMLParser(data: data)
     parser.delegate = builder
     guard parser.parse(), let root = builder.root else {
-        throw XlsxReadError.corrupt("XML 解析失败：\(part)（\(builder.parseError?.localizedDescription ?? "未知错误"）)")
+        throw XlsxReadError.corrupt("XML 解析失败：\(part)（\(builder.parseError?.localizedDescription ?? "未知错误")）")
     }
     return root
 }

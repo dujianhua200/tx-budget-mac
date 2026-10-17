@@ -12,7 +12,8 @@ private struct ImportPreviewState: Identifiable {
     var rowsBefore: [ImportRow]
 }
 
-/// 落库 + 提示（LibrariesView / FeeRulesView 共用）。
+/// 落库 + 提示（LibrariesView / FeeRulesView 共用；调 AppState 的 MainActor 方法，故同为 MainActor）。
+@MainActor
 func applyLibraryImport(appState: AppState, kind: ImportLibraryKind,
                         classification: ImportClassification, decisions: ImportDecisions,
                         rowsBefore: [ImportRow]) {
