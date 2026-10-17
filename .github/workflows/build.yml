@@ -86,4 +86,6 @@ jobs:
             echo "错误：Release 资产校验失败：未找到 label=$NAME 且大小一致的资产" >&2
             exit 1
           fi
-          echo "Release 资产已上传（label：$NAME；注：GitHub 会剥掉资产 name 里的中文，下载文件名以 name 为准）"
+          # 注意：echo 里的变量必须用 ${NAME} 花括号定界——macOS /bin/bash 3.2 会把
+          # $NAME 后紧跟的全角标点误解析为变量名的一部分（v1.0.2 补传踩过此坑）。
+          echo "Release 资产已上传（label：${NAME}；注：GitHub 会剥掉资产 name 里的中文，下载文件名以 name 为准）"
