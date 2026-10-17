@@ -20,32 +20,37 @@ final class AppState: ObservableObject {
 
     init(dataURL: URL = DatabaseStore.defaultDataURL()) {
         self.dataURL = dataURL
+        // 先算局部变量再统一赋值：init 未完成前不能读 self.db。
+        var initialDb: DbFile
+        var initialLoadError: String?
         do {
             if let loaded = try DatabaseStore.load(from: dataURL) {
                 if loaded.configurationProfiles.isEmpty {
-                    self.db = DatabaseStore.defaultDb()
-                    self.loadError = "数据文件缺少配置方案，已载入空白默认库（原文件未改动）。"
+                    initialDb = DatabaseStore.defaultDb()
+                    initialLoadError = "数据文件缺少配置方案，已载入空白默认库（原文件未改动）。"
                 } else {
-                    self.db = loaded
+                    initialDb = loaded
                 }
             } else {
-                self.db = DatabaseStore.defaultDb()
+                initialDb = DatabaseStore.defaultDb()
             }
         } catch let err as DatabaseError {
-            self.db = DatabaseStore.defaultDb()
+            initialDb = DatabaseStore.defaultDb()
             switch err {
             case .v1NeedsElectronMigration:
-                self.loadError = "检测到 v1 数据文件，请先用 Electron 版打开一次完成迁移，再用原生版打开。"
+                initialLoadError = "检测到 v1 数据文件，请先用 Electron 版打开一次完成迁移，再用原生版打开。"
             case .versionTooHigh(let v):
-                self.loadError = "数据版本高于本软件版本（v\(v)），请升级软件后再打开。"
+                initialLoadError = "数据版本高于本软件版本（v\(v)），请升级软件后再打开。"
             default:
-                self.loadError = "数据文件无法识别或已损坏且无可用备份，请从备份恢复。"
+                initialLoadError = "数据文件无法识别或已损坏且无可用备份，请从备份恢复。"
             }
         } catch {
-            self.db = DatabaseStore.defaultDb()
-            self.loadError = "数据加载失败：\(error.localizedDescription)"
+            initialDb = DatabaseStore.defaultDb()
+            initialLoadError = "数据加载失败：\(error.localizedDescription)"
         }
-        self.exportSelection = resolveExportSelection(self.db.settings)
+        self.db = initialDb
+        self.loadError = initialLoadError
+        self.exportSelection = resolveExportSelection(initialDb.settings)
     }
 
     // MARK: - 派生状态
