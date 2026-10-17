@@ -103,6 +103,9 @@ public struct ProjectInfo: Equatable {
     public var 工程负责人: String = ""
     public var 审核: String = ""
     public var 编制: String = ""
+    /// 新增可选字段（工程信息表单“参建单位”组；计算不读，仅展示/保存）。
+    public var 施工单位: String? = nil
+    public var 设计单位: String? = nil
     public init() {}
 
     /// JS `{...DEFAULT_INFO, ...info}` 合并后的值（calc 除 resolveRates 外都用合并值；
