@@ -15,7 +15,7 @@ struct ContentView: View {
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                Button("新建工程") { appState.newProject(name: nextProjectName()) }
+                Button("新建工程") { appState.createProject(name: nextProjectName()) }
                 Button("打开工程") { appState.nav = .projects }
                 Button("保存工程") { appState.flushSaves() }
                     .keyboardShortcut("s", modifiers: .command)

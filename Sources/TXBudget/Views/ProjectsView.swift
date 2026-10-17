@@ -33,7 +33,7 @@ struct ProjectsView: View {
                     let name = newName.trimmingCharacters(in: .whitespaces)
                     guard !name.isEmpty else { return }
                     let tpl = appState.db.projects.first { $0.id == templateId }
-                    appState.newProject(name: name, template: tpl)
+                    appState.createProject(name: name, template: tpl)
                     newName = ""
                 }
                 .buttonStyle(.borderedProminent)

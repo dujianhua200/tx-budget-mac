@@ -103,6 +103,8 @@ struct LibrariesView: View {
 
 /// 通用字典表格：行 = [String: String]，列由 LibraryColumn 定义。
 /// 文本/数字单元格本地编辑、提交（回车/失焦）时写回；下拉/勾选即时写回。
+/// 注：不用 SwiftUI Table——TableBuilder 内 ForEach 生成 TableColumn 会报 init 歧义；
+/// 改用 List + HStack 网格，列宽与 Table 版一致。
 struct DictTableView: View {
     var columns: [LibraryColumn]
     var rowDicts: [[String: String]]
@@ -124,25 +126,53 @@ struct DictTableView: View {
                 Text("\(rowDicts.count) 条").foregroundColor(.secondary)
             }
             .controlSize(.small)
-            Table(indexedRows, selection: $selected) {
+            HStack(spacing: 8) {
                 ForEach(columns, id: \.key) { col in
-                    TableColumn(col.label) { (indexed: IndexedRow<[String: String]>) in
-                        cell(col, indexed.row, indexed.id)
-                    }
+                    Text(col.label).font(.caption).foregroundColor(.secondary)
+                        .frame(width: columnWidth(col), alignment: .leading)
                 }
+                Spacer()
             }
-            .tableStyle(.inset)
+            List(indexedRows) { indexed in
+                HStack(spacing: 8) {
+                    ForEach(columns, id: \.key) { col in
+                        cell(col, indexed.row, indexed.id)
+                            .frame(width: columnWidth(col), alignment: .leading)
+                    }
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { toggleSelect(indexed.id) }
+                .listRowBackground(selected.contains(indexed.id) ? Color.accentColor.opacity(0.15) : Color.clear)
+            }
+            .listStyle(.inset)
         }
     }
 
     private var indexedRows: [IndexedRow<[String: String]>] {
-        // id 用行内 id（唯一）；无 id 时用序号兜底。
         rowDicts.enumerated().map { i, d in
             IndexedRow(id: i, row: d)
         }
     }
 
-    // 注意：Table 的 selection 绑定的是 IndexedRow.id（序号），删除时映射回行内 id。
+    private func toggleSelect(_ index: Int) {
+        if selected.contains(index) {
+            selected.remove(index)
+        } else {
+            selected.insert(index)
+        }
+    }
+
+    private func columnWidth(_ col: LibraryColumn) -> CGFloat {
+        switch col.kind {
+        case .number: return 90
+        case .select: return 110
+        case .checkbox: return 40
+        case .text: return 140
+        }
+    }
+
+    // 注意：List 的选中是序号，删除时映射回行内 id。
     private func cell(_ col: LibraryColumn, _ dict: [String: String], _ index: Int) -> some View {
         let rowId = dict["id"] ?? "\(index)"
         let current = dict[col.key] ?? ""

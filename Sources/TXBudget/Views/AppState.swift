@@ -158,7 +158,7 @@ final class AppState: ObservableObject {
         nav = .current(.info)
     }
 
-    func newProject(name: String, template: ProjectRecord? = nil) {
+    func createProject(name: String, template: ProjectRecord? = nil) {
         let created = newProject(db, name: name, template: template)
         updateDb { d in d.projects.insert(created, at: 0) }
         openProjectId = created.id
