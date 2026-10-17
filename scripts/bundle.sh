@@ -4,11 +4,14 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-if [[ "${GITHUB_REF:-}" == refs/tags/* ]]; then
-  VERSION="${GITHUB_REF#refs/tags/}"
-  VERSION="${VERSION#v}"
-else
-  VERSION="dev"
+# VERSION 优先用外部传入（workflow_dispatch 补传 Release 时用）；否则从 tag 取；再否则 dev。
+if [[ -z "${VERSION:-}" ]]; then
+  if [[ "${GITHUB_REF:-}" == refs/tags/* ]]; then
+    VERSION="${GITHUB_REF#refs/tags/}"
+    VERSION="${VERSION#v}"
+  else
+    VERSION="dev"
+  fi
 fi
 
 APP_DIR="build/滑洲智算.app"

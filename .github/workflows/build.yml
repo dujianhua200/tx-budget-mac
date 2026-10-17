@@ -3,6 +3,11 @@ name: Build
 # 每次推送（main）+ tag（v*）都跑，另保留手动触发。CI 绿了才发布。
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "要补传 Release 资产的 tag（如 v1.0.2）；留空则不发 Release"
+        required: false
+        default: ""
   push:
     branches: ["main"]
     tags: ["v*"]
@@ -20,7 +25,12 @@ jobs:
       - name: Swift build (release)
         run: swift build -c release
       - name: Bundle .app + .dmg
-        run: bash ./scripts/bundle.sh
+        run: |
+          if [[ -n "${{ inputs.release_tag }}" ]]; then
+            TAG="${{ inputs.release_tag }}"
+            export VERSION="${TAG#v}"
+          fi
+          bash ./scripts/bundle.sh
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -28,10 +38,42 @@ jobs:
           path: build/*.dmg
           if-no-files-found: error
       - name: Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: build/*.dmg
-          generate_release_notes: false
-          draft: false
-          prerelease: false
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${{ github.ref_name }}"
+          else
+            TAG="${{ inputs.release_tag }}"
+          fi
+          DMG="$(ls build/*.dmg | head -n 1)"
+          NAME="$(basename "$DMG")"
+          # 找到或创建 Release（按 tag）。
+          REL="$(gh api "repos/${{ github.repository }}/releases/tags/$TAG" --jq .id 2>/dev/null || true)"
+          if [[ -z "$REL" ]]; then
+            REL="$(gh api "repos/${{ github.repository }}/releases" -f tag_name="$TAG" -f name="$TAG" -F draft=false -F prerelease=false --jq .id)"
+          fi
+          # 删掉同文件名的旧资产与被 GitHub 剥掉中文前缀的错名资产，避免重复。
+          DEL_IDS="$(gh api "repos/${{ github.repository }}/releases/$REL/assets" | python3 -c "
+          import json, sys
+          name = sys.argv[1]
+          for a in json.load(sys.stdin):
+              if a['name'] != name and a['name'].endswith('-mac-arm64.dmg'):
+                  print(a['id'])
+          " "$NAME")"
+          for AID in $DEL_IDS; do
+            gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$AID" >/dev/null
+          done
+          # 上传：资产名必须百分号编码，否则 GitHub 会剥掉中文前缀（见设计文档 §8）。
+          ENC="$(python3 -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe="-._"))' "$NAME")"
+          curl -sS -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Content-Type: application/octet-stream" \
+            --data-binary @"$DMG" \
+            "https://uploads.github.com/repos/${{ github.repository }}/releases/$REL/assets?name=$ENC&label=$ENC"
+          GOT="$(gh api "repos/${{ github.repository }}/releases/$REL/assets" --jq '.[].name')"
+          if [[ "$GOT" != "$NAME" ]]; then
+            echo "错误：Release 资产名不对：期望 $NAME，实际 $GOT" >&2
+            exit 1
+          fi
+          echo "Release 资产已上传：$NAME"
