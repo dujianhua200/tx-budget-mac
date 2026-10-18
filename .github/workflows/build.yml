@@ -31,6 +31,10 @@ jobs:
             export VERSION="${TAG#v}"
           fi
           bash ./scripts/bundle.sh
+      - name: Verify ad-hoc signature
+        run: |
+          codesign -dv "build/滑洲智算.app"
+          test -d "build/滑洲智算.app/Contents/_CodeSignature"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -55,14 +59,13 @@ jobs:
           if [[ -z "$REL" ]]; then
             REL="$(gh api "repos/${{ github.repository }}/releases" -f tag_name="$TAG" -f name="$TAG" -F draft=false -F prerelease=false --jq .id)"
           fi
-          # 删掉与本次文件名不同的旧资产，避免重复。
+          # 删掉旧的 dmg 资产（同名也删，保证同名重传不重复），再上传。
           DEL_IDS="$(gh api "repos/${{ github.repository }}/releases/$REL/assets" | python3 -c "
           import json, sys
-          name = sys.argv[1]
           for a in json.load(sys.stdin):
-              if a['name'] != name and a['name'].endswith('-mac-arm64.dmg'):
+              if a['name'].endswith('-mac-arm64.dmg'):
                   print(a['id'])
-          " "$NAME")"
+          ")"
           for AID in $DEL_IDS; do
             gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$AID" >/dev/null
           done

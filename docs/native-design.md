@@ -8,7 +8,7 @@
 
 - 目标：真正的原生 Mac 应用（Swift + SwiftUI，原生控件/系统字体/原生菜单/原生窗口行为），功能与 Electron v3.0 定稿一致，数据文件与 Electron v2/v3 互通（直接打开，不迁移）。
 - 非目标 / 不动：计算口径（§3）、数据格式（§2，旧文件直接读）、11 张表版式结构（只按结算书版式输出）、Q2/规费等未决口径（规费子项显示保持现状，不擅自改）。
-- 部署目标：**macOS 13+，Apple Silicon**（用户是 Apple Silicon Mac）。无签名，DMG 分发，用户右键 → 打开（与 Electron 版一致的交付方式）。
+- 部署目标：**macOS 13+，Apple Silicon**（用户是 Apple Silicon Mac）。临时签名（ad-hoc，无需证书），DMG 分发，首次打开弹“无法验证开发者”，右键 → 打开可绕过（见 §8 签名说明）。
 - 构建：SwiftPM（不手写 `.xcodeproj`，避免 pbxproj 手工错误）。`Package.swift`，`swift build` / `swift test`，CI 打包 `.app` + `.dmg`。
 
 ## 2. 数据模型（与 Electron JSON 同一格式，Codable 读写）
@@ -182,7 +182,8 @@ PrintExportTests.swift / XlsxTestReader.swift / ReferenceBookFixture.swift
 
 - 工作流 `.github/workflows/build.yml`：**每次推送（main 分支）+ tag（`v*`）都跑**，另保留 `workflow_dispatch` 手动触发。**CI 绿了才发布**。
 - 每次推送都跑编译 + 测试；打 tag 时另出 Release。
-- 步骤：`macos-15` runner → `swift test` → `swift build -c release` → `scripts/bundle.sh`（组装 `.app`：`Contents/MacOS/TXBudget` + `Info.plist`（bundle id `com.zhang.txbudget`（v1.0.2 起保持不变，见 §10.7），`LSMinimumSystemVersion 13.0`，`CFBundleName 滑洲智算`，`CFBundleIconFile AppIcon.icns`）→ `hdiutil` 生成 `.dmg`）→ 上传 artifact；tag 触发时创建 Release，资产 `huazhou-zhisuan-<version>-mac-arm64.dmg`（拼音 ASCII，见下；无签名）。
+- 步骤：`macos-15` runner → `swift test` → `swift build -c release` → `scripts/bundle.sh`（组装 `.app`：`Contents/MacOS/TXBudget` + `Info.plist`（bundle id `com.zhang.txbudget`（v1.0.2 起保持不变，见 §10.7），`LSMinimumSystemVersion 13.0`，`CFBundleName 滑洲智算`，`CFBundleIconFile AppIcon.icns`）→ 临时签名 → `hdiutil` 生成 `.dmg`）→ 上传 artifact；tag 触发时创建 Release，资产 `huazhou-zhisuan-<version>-mac-arm64.dmg`（拼音 ASCII，见下；临时签名 ad-hoc，见签名说明）。
+- **签名（临时签名 ad-hoc，v1.0.2 补）**：`bundle.sh` 组装 `.app` 后、生成 DMG 前执行 `codesign --force --deep --sign - "$APP_DIR"`（无需任何证书）；CI 用 `codesign -dv` + `_CodeSignature` 存在校验签名已写入。作用：把完全无签名时的“已损坏，无法打开”（Gatekeeper 拦截，无法绕过）变成“无法验证开发者”（右键 → 打开可绕过）。局限：仍会弹“无法验证开发者”提示；彻底无提示需付费苹果开发者账号 + Developer ID 签名 + 公证，需用户另行决定。
 - **Release 资产名用拼音 ASCII（用户 2026-10-18 定）**：GitHub 服务端会把资产 `name` 里的非 ASCII 字符剥掉（v1.0.2 验证：`滑洲智算-1.0.2-mac-arm64.dmg` → `-1.0.2-mac-arm64.dmg`，PATCH 改名也被服务端静默丢弃；且直接调 uploads 端点上传的凭证在本环境被 401 拦截，补传只能走 CI 的 `GITHUB_TOKEN`）。故约定：**Release 资产名 = `huazhou-zhisuan-<version>-mac-arm64.dmg`（拼音，纯 ASCII）**，`label` 同名；上传后校验 `name` + `label` + 大小。`.app`（滑洲智算.app）、DMG 卷名（滑洲智算）、窗口标题、`CFBundleName`（滑洲智算）保持中文不变——GitHub 只剥 Release 资产名，DMG 内部名字不受影响。`workflow_dispatch` 带 `release_tag` 输入时可对已有 tag 补传（不动 tag）。v1.0.2 的 Release 资产已按此约定处理：原 `-1.0.2-mac-arm64.dmg` 删掉，同一 v1.0.2 代码以拼音名重传。
 - 发布：QA 通过后打 tag `v1.0.0`，Release 出 macOS `.dmg`。**不要动 Electron 仓库的任何 tag/Release。**
 - 验证：每次阶段交付后由推送自动触发 CI（编译 + 测试）；发布前用 tag 触发完整流程并核实 Release 资产。

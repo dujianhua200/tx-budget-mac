@@ -1,5 +1,5 @@
 #!/bin/bash
-# 组装 .app + .dmg（无签名）。输入：.build/release/TXBudget；输出：build/huazhou-zhisuan-<version>-mac-arm64.dmg
+# 组装 .app + .dmg（临时签名 ad-hoc，无需证书）。输入：.build/release/TXBudget；输出：build/huazhou-zhisuan-<version>-mac-arm64.dmg
 # 命名约定（见 docs/native-design.md §8）：DMG 文件名（Release 资产名）用拼音 ASCII，
 # 因为 GitHub 会剥掉 Release 资产名里的非 ASCII 字符；.app / 卷名 / CFBundleName 保持中文。
 # 图标：Assets/AppIcon.iconset（已提交进仓库）→ iconutil 生成 .icns；失败即停，不出无图标包。
@@ -65,6 +65,13 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
+
+# 临时签名（ad-hoc）：无需任何证书，CI 的 macOS runner 可直接跑。
+# 作用：把“已损坏，无法打开”（完全无签名时 Gatekeeper 的拦截，无法绕过）变成
+# “无法验证开发者”（右键 → 打开可绕过）。这是无证书下的最优解。
+# 局限：仍会弹“无法验证开发者”；彻底无提示需付费苹果开发者账号 + Developer ID 签名 + 公证（待用户另行决定）。
+# 注意：签名必须是组装 .app 的最后一步（所有文件落盘之后），之后只做 hdiutil 打包。
+codesign --force --deep --sign - "$APP_DIR"
 
 hdiutil create -volname "滑洲智算" -srcfolder "$APP_DIR" -ov -format UDZO "$DMG"
 ls -la "$DMG"
