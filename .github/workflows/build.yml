@@ -56,7 +56,10 @@ jobs:
           NAME="$(basename "$DMG")"
           # 找到或创建 Release（按 tag）。
           REL="$(gh api "repos/${{ github.repository }}/releases/tags/$TAG" --jq .id 2>/dev/null || true)"
-          if [[ -z "$REL" ]]; then
+          # 注意：Release 不存在时 gh api 返回 404 并把错误响应体写到 stdout，REL 会
+          # 是整段 JSON 而非空字符串，-z 判断失效（v2.0.0 发布时 Release 步骤踩过）。
+          # 只认纯数字 id，其余（空/null/响应体）一律走下面的创建分支。
+          if ! [[ "$REL" =~ ^[0-9]+$ ]]; then
             REL="$(gh api "repos/${{ github.repository }}/releases" -f tag_name="$TAG" -f name="$TAG" -F draft=false -F prerelease=false --jq .id)"
           fi
           # 删掉旧的 dmg 资产（同名也删，保证同名重传不重复），再上传。
