@@ -5,6 +5,9 @@ import SwiftUI
 /// v2.0.1：页首横幅改为“当前方案”下拉选择器（ProfilePickerBanner），现场可切换。
 /// v2.1.0：横幅下加“补全定额库”——把内置完整库并集合并进当前方案（只增不改，
 /// 见 Logic/LibraryCompletion.swift 与 docs/v2.1-data-completion-design.md §6）。
+/// v2.2.0：升级为“补全并校正”——内置库已按官方 451 手册重建，合并先校正
+/// （工日/单位/名称/消耗量以官方为准）后补全；自建行与全部价格不动
+/// （docs/v2.2-correction-design.md §5/§6）。
 /// 统一专业表格 ProTable（搜索/排序/双击编辑/复制行/删除确认）；行字典经
 /// LibraryRowCodec 提交时解析回具体行类型。Excel 导入/导出沿用 v1 组件。
 struct LibrariesView: View {
@@ -22,11 +25,11 @@ struct LibrariesView: View {
                        subtitle: "资料库 · 编辑的是指定方案的库，与其他方案完全隔离")
             // 当前方案选择器（v2.0.1：原静态横幅改真下拉，现场可切换编辑目标）
             ProfilePickerBanner()
-            // 定额库补全（v2.1.0）：作用于当前方案，先试算弹确认，完成后报实际新增数。
+            // 定额库补全并校正（v2.2.0）：作用于当前方案，先试算弹确认，完成后分开报补全与校正数。
             HStack(spacing: 8) {
-                Button("补全定额库") { prepareCompletion() }
+                Button("补全并校正定额库") { prepareCompletion() }
                     .controlSize(.small)
-                Text("把内置完整库中当前方案缺少的定额与材料/机械/仪表关联补进来，只新增、不覆盖现有数据。")
+                Text("把内置完整库中缺少的定额与关联补进来，并按官方 451 手册校正已有定额的工日与消耗量；你自建的定额和全部价格不动。")
                     .font(.caption).foregroundColor(.secondary)
             }
             if let kind = ImportLibraryKind(libraryViewKey: viewKey) {
@@ -61,20 +64,20 @@ struct LibrariesView: View {
             )
         }
         .padding(Theme.pagePadding)
-        .alert("补全定额库", isPresented: $showCompletionConfirm) {
+        .alert("补全并校正定额库", isPresented: $showCompletionConfirm) {
             Button("取消", role: .cancel) {}
-            Button("补全") { applyCompletion() }
+            Button("补全并校正") { applyCompletion() }
         } message: {
-            Text("将为当前方案“\(appState.editingProfile?.name ?? "—")”补全：\(previewReport?.detailText ?? "")。只新增缺失数据，不覆盖、不修改现有任何一行。")
+            Text("将为当前方案“\(appState.editingProfile?.name ?? "—")”补全：\(previewReport?.detailText ?? "")；校正：\(previewReport?.correctedDetailText ?? "")。将按官方 451 手册校正定额工日与消耗量，你自建的定额和全部价格不动。")
         }
-        .alert("补全完成", isPresented: $showCompletionDone) {
+        .alert("补全校正完成", isPresented: $showCompletionDone) {
             Button("好") {}
         } message: {
-            Text("已补全：\(doneReport?.detailText ?? "")。新增定额插入后将自动带出材料、机械与仪表。")
+            Text("已补全：\(doneReport?.detailText ?? "")；已校正：\(doneReport?.correctedDetailText ?? "")。新增定额插入后将自动带出材料、机械与仪表。")
         }
     }
 
-    /// 试算补全（不写数据）：加载内置完整库并对当前方案跑一次合并，得到预计新增数。
+    /// 试算补全并校正（不写数据）：加载内置完整库并对当前方案跑一次合并，得到预计补全/校正数。
     private func prepareCompletion() {
         guard let profile = appState.editingProfile else { return }
         if cachedFull == nil { cachedFull = loadBundledFullLibrary() }
@@ -83,15 +86,15 @@ struct LibrariesView: View {
             return
         }
         let (_, report) = mergeLibraryCompletion(base: profile.libraries, full: full)
-        if report.totalAdded == 0 {
-            appState.showToast("当前方案已是完整库，无需补全")
+        if report.totalAdded == 0 && report.totalCorrected == 0 {
+            appState.showToast("当前方案已与官方 451 手册一致，无需补全校正")
             return
         }
         previewReport = report
         showCompletionConfirm = true
     }
 
-    /// 正式补全：在 updateDb 内对实时方案数据再跑一次合并（与试算同一纯函数，结果一致）。
+    /// 正式补全并校正：在 updateDb 内对实时方案数据再跑一次合并（与试算同一纯函数，结果一致）。
     private func applyCompletion() {
         guard let full = cachedFull, let profileId = appState.editingProfile?.id else { return }
         var applied: LibraryCompletionReport?
