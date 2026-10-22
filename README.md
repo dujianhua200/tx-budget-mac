@@ -2,8 +2,8 @@
 
 Swift + SwiftUI 重写，Mac 专用。Electron 版（`dujianhua200/tx-budget`，v3.0.0）保持原样、只出 Windows 版；本仓库不碰 Electron 仓库的任何 tag/Release。
 
-- 架构设计：`docs/native-design.md`（先读它再动手）
-- 部署目标：macOS 13+，Apple Silicon；无签名，DMG 分发，用户右键 → 打开
+- 架构设计：`docs/native-design.md`（数据/引擎/导出，先读它再动手）；v2 界面架构：`docs/v2-ui-design.md`
+- 部署目标：macOS 13+，Apple Silicon；临时签名（ad-hoc），DMG 分发，首次打开右键 → 打开
 - 数据格式与 Electron v2/v3 互通：同一 JSON 格式、同一数据路径（`~/Library/Application Support/通信概预算/budget-data.json`），旧数据直接打开，不迁移
 
 ## 开发

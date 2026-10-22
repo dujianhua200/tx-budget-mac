@@ -8,12 +8,14 @@ import Combine
 @MainActor
 final class AppState: ObservableObject {
     @Published var db: DbFile
-    @Published var nav: NavDestination = .projects
+    @Published var nav: NavDestination = .projectList
     @Published var openProjectId: String?
     @Published var saveState = SaveStatus.initial()
     @Published var toast: String?
     @Published var loadError: String?
     @Published var exportSelection: [String]
+    /// 本次运行的导出记录（内存态，不落盘）：报表导出页展示，重启清空。
+    @Published var exportHistory: [ExportRecord] = []
 
     private let dataURL: URL
     private var autosaveTask: Task<Void, Never>?
@@ -84,6 +86,22 @@ final class AppState: ObservableObject {
 
     func calcResult(for project: ProjectRecord) -> CalcResult? {
         calcFor(db, project)
+    }
+
+    /// 当前打开工程的全部校验问题（校验中心 / 状态栏徽标 / 概览共用同一聚合）。
+    var openProjectIssues: [ValidationIssue] {
+        guard let p = openProject else { return [] }
+        return collectValidationIssues(db: db, project: p, profile: projectProfile,
+                                       result: calcResult(for: p))
+    }
+
+    var openProjectIssueCount: Int { openProjectIssues.count }
+
+    /// 记录一次成功导出（报表导出页“本次导出记录”展示）。
+    func recordExport(projectName: String, fileName: String) {
+        exportHistory.insert(
+            ExportRecord(time: Date(), projectName: projectName, fileName: fileName),
+            at: 0)
     }
 
     // MARK: - 保存
@@ -179,14 +197,24 @@ final class AppState: ObservableObject {
             }
         }
         openProjectId = id
-        nav = .current(.info)
+        nav = .overview
     }
 
     func createProject(name: String, template: ProjectRecord? = nil) {
-        let created = newProject(db, name: name, template: template)
-        updateDb { d in d.projects.insert(created, at: 0) }
+        createProject(name: name, profileId: nil, template: template)
+    }
+
+    /// 新建工程（向导版）：可指定配置方案（缺省用新建默认方案逻辑，见 newProject）。
+    /// 创建后进入工程信息页补全信息（向导的“完成”步）。
+    func createProject(name: String, profileId: String?, template: ProjectRecord?) {
+        var created = newProject(db, name: name, template: template)
+        if let profileId, db.configurationProfiles.contains(where: { $0.id == profileId }) {
+            created.profileId = profileId
+        }
+        let toInsert = created
+        updateDb { d in d.projects.insert(toInsert, at: 0) }
         openProjectId = created.id
-        nav = .current(.info)
+        nav = .projectInfo
         showToast("已新建工程“\(name)”")
     }
 
@@ -269,6 +297,21 @@ final class AppState: ObservableObject {
             }
         }
         return (ok, failures)
+    }
+}
+
+/// 一次导出记录（内存态）：时间 + 工程名 + 文件名。
+struct ExportRecord: Identifiable {
+    var id = UUID()
+    var time: Date
+    var projectName: String
+    var fileName: String
+
+    var timeText: String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "HH:mm"
+        return f.string(from: time)
     }
 }
 #endif

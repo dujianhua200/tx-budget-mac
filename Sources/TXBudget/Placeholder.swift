@@ -1,5 +1,4 @@
-/// 占位：阶段 1 骨架。阶段 2 起由 Engine/Logic/Models/Views 逐步替换。
-/// 保留本文件直至 @main 入口（TXBudgetApp.swift）落地，之后删除。
+/// 应用版本常量（发布版本号的单一事实源；随发布 bump）。
 public enum TXBudget {
-    public static let version = "1.0.2"
+    public static let version = "2.0.0"
 }

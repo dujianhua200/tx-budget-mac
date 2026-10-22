@@ -20,8 +20,9 @@ struct BatchView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("批量生成工程").font(.headline)
-                GroupBox("① 批量新建（粘贴工程名称 + 套模板）") {
+                PageHeader(title: "批量生成",
+                           subtitle: "批量新建 / Excel 导入 / 改价改折扣 / 导出 / 删除")
+                SectionCard(title: "① 批量新建（粘贴工程名称 + 套模板）") {
                     VStack(alignment: .leading, spacing: 8) {
                         TextEditor(text: $names)
                             .frame(height: 120)
@@ -43,7 +44,7 @@ struct BatchView: View {
                             .foregroundColor(.secondary).font(.caption)
                     }
                 }
-                GroupBox("② 从 Excel 批量导入工程量") {
+                SectionCard(title: "② 从 Excel 批量导入工程量") {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("支持 v3.0 母版“工程量”表与简易四列表（工程名称/定额编号/项目名称/数量/工日系数）。")
                             .foregroundColor(.secondary).font(.caption)
@@ -61,7 +62,7 @@ struct BatchView: View {
                         }
                     }
                 }
-                GroupBox("③ 批量改价 / 改费率（勾选下方工程后应用）") {
+                SectionCard(title: "③ 批量改价 / 改费率（勾选下方工程后应用）") {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Picker("选择材料", selection: $matKey) {
@@ -85,7 +86,7 @@ struct BatchView: View {
                             .foregroundColor(.secondary).font(.caption)
                     }
                 }
-                GroupBox("④ 批量导出预算书") {
+                SectionCard(title: "④ 批量导出预算书") {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("勾选下方工程，一键导出每个工程的完整预算书 Excel，文件名为“<工程名>_概预算.xlsx”。单个工程失败不中断其余工程。")
                             .foregroundColor(.secondary).font(.caption)
@@ -93,7 +94,7 @@ struct BatchView: View {
                             .disabled(selected.isEmpty)
                     }
                 }
-                GroupBox("⑤ 批量删除工程") {
+                SectionCard(title: "⑤ 批量删除工程") {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("勾选下方工程，删除前弹确认框并备份。")
                             .foregroundColor(.secondary).font(.caption)
@@ -118,6 +119,7 @@ struct BatchView: View {
                 .tableStyle(.inset)
                 .frame(minHeight: 200)
             }
+            .padding(Theme.pagePadding)
         }
         .alert("导入", isPresented: Binding(
             get: { importAlert != nil },

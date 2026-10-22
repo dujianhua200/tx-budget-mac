@@ -1,9 +1,9 @@
 #if os(macOS)
 import SwiftUI
 
-/// 当前工程 · 表五：完整表格，列：费用名称 / 计算基数 / 费率 / 金额 / 公式 / 启用勾选。
+/// 当前工程 · 表五内容（费用页“表五”标签）：完整表格，列：费用名称 / 计算基数 / 费率 / 金额 / 公式 / 启用勾选。
 /// 金额取 result.table5；手动项可覆盖（table5Overrides.amount）。
-struct Table5View: View {
+struct Table5ContentView: View {
     @EnvironmentObject private var appState: AppState
     var project: ProjectRecord
 

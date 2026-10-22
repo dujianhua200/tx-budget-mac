@@ -15,6 +15,8 @@ struct ProjectInfoView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                PageHeader(title: "工程信息",
+                           subtitle: "基本信息、参建单位与取费设置；改动即自动保存")
                 // 工程名称（列表显示）
                 HStack {
                     Text("工程名称（列表显示）").frame(width: 160, alignment: .leading)
@@ -22,7 +24,7 @@ struct ProjectInfoView: View {
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 16, weight: .bold))
                 }
-                GroupBox("基本信息") {
+                SectionCard(title: "基本信息") {
                     VStack(alignment: .leading, spacing: 8) {
                         strField("建设项目名称", \.建设项目名称)
                         strField("单项工程名称", \.单项工程名称)
@@ -56,7 +58,7 @@ struct ProjectInfoView: View {
                         }
                     }
                 }
-                GroupBox("参建单位") {
+                SectionCard(title: "参建单位") {
                     VStack(alignment: .leading, spacing: 8) {
                         strField("建设单位", \.建设单位)
                         optStrField("施工单位", \.施工单位)
@@ -64,7 +66,7 @@ struct ProjectInfoView: View {
                         strField("监理单位", \.监理单位)
                     }
                 }
-                GroupBox("编制信息") {
+                SectionCard(title: "编制信息") {
                     VStack(alignment: .leading, spacing: 8) {
                         strField("编制", \.编制)
                         strField("审核", \.审核)
@@ -72,7 +74,7 @@ struct ProjectInfoView: View {
                         strField("工程负责人", \.工程负责人)
                     }
                 }
-                GroupBox("取费与折扣") {
+                SectionCard(title: "取费与折扣") {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Text("施工折扣").frame(width: 160, alignment: .leading)
@@ -137,7 +139,7 @@ struct ProjectInfoView: View {
                         }
                     }
                 }
-                GroupBox("增值税覆盖（本工程）") {
+                SectionCard(title: "增值税覆盖（本工程）") {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("为空 = 用配置值；清空即恢复配置值。优先级：本工程覆盖 > 工程信息 > 配置方案。")
                             .foregroundColor(.secondary).font(.caption)
@@ -146,7 +148,7 @@ struct ProjectInfoView: View {
                         vatOverrideRow("销项税额税率", \.outputTax, configValue: appState.projectProfile?.rates.vatRates.outputTax ?? appState.projectProfile?.rates.vatRates.yiTax)
                     }
                 }
-                GroupBox("表五单项覆盖（本工程）") {
+                SectionCard(title: "表五单项覆盖（本工程）") {
                     VStack(alignment: .leading, spacing: 8) {
                         if manualFees.isEmpty {
                             Text("当前配置无手动填项。").foregroundColor(.secondary)
@@ -164,7 +166,7 @@ struct ProjectInfoView: View {
                     }
                 }
             }
-            .padding(.bottom, 20)
+            .padding(Theme.pagePadding)
         }
         .onAppear {
             if let d = project.info.施工折扣, d != 1 { lastRate = d }

@@ -11,7 +11,7 @@ struct TXBudgetApp: App {
             ContentView()
                 .environmentObject(appState)
         }
-        .defaultSize(width: 1280, height: 840)
+        .defaultSize(width: 1280, height: 800)
     }
 }
 #endif

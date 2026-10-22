@@ -9,11 +9,24 @@ struct FeeRulesView: View {
     @State private var feeProjectType = "通信线路工程"
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("取费规则 · \(tab.label)")
-                .font(.headline)
-            Text("正在编辑方案：\(appState.editingProfile?.name ?? "—")（编辑目标）；新建工程默认方案不受这里影响。")
-                .foregroundColor(.secondary).font(.caption)
+        VStack(alignment: .leading, spacing: 12) {
+            PageHeader(title: "取费规则 · \(tab.label)",
+                       subtitle: "取费规则随配置方案保存；不同方案完全隔离")
+            HStack(spacing: 10) {
+                Image(systemName: "pencil.circle.fill").foregroundColor(Theme.accent)
+                Text("正在编辑方案：")
+                    .font(.callout).foregroundColor(.secondary)
+                Text(appState.editingProfile?.name ?? "—")
+                    .font(.callout).fontWeight(.semibold)
+                Text("（新建工程默认方案不受这里影响）")
+                    .font(.caption).foregroundColor(.secondary)
+                Spacer()
+                Button("切换编辑方案") { appState.nav = .profiles }
+                    .controlSize(.small)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(Theme.accent.opacity(0.07))
+            .cornerRadius(8)
             switch tab {
             case .rates:
                 ratesView
@@ -25,6 +38,7 @@ struct FeeRulesView: View {
                 rulesAltView
             }
         }
+        .padding(Theme.pagePadding)
     }
 
     // MARK: - 费率
@@ -118,9 +132,9 @@ struct FeeRulesView: View {
     }
 
     private var table5FeesTable: some View {
-        DictTableView(
+        ProTable(
             columns: LibraryRowCodec.table5Columns,
-            rowDicts: LibraryRowCodec.table5Dicts(appState.editingProfile?.table5Fees ?? []),
+            rows: LibraryRowCodec.table5Dicts(appState.editingProfile?.table5Fees ?? []),
             onCommit: { id, dict in
                 appState.updateDb { d in
                     guard let idx = editingProfileIndex(d) else { return }
@@ -135,15 +149,15 @@ struct FeeRulesView: View {
                     d.configurationProfiles[idx].updatedAt = nowISO()
                 }
             },
-            onDelete: { indices in
-                let dicts = LibraryRowCodec.table5Dicts(appState.editingProfile?.table5Fees ?? [])
-                let ids = Set(indices.compactMap { $0 < dicts.count ? dicts[$0]["id"] : nil }.compactMap { $0 })
+            onDelete: { ids in
                 appState.updateDb { d in
                     guard let idx = editingProfileIndex(d) else { return }
                     LibraryRowCodec.deleteTable5(ids: ids, profile: &d.configurationProfiles[idx])
                     d.configurationProfiles[idx].updatedAt = nowISO()
                 }
-            }
+            },
+            emptyTitle: "暂无表五费用项",
+            emptyMessage: "点“新增一行”添加费用项。"
         )
     }
 
@@ -174,9 +188,9 @@ struct FeeRulesView: View {
     }
 
     private var rulesAltTable: some View {
-        DictTableView(
+        ProTable(
             columns: LibraryRowCodec.columns(for: .rulesAlt),
-            rowDicts: LibraryRowCodec.dicts(for: .rulesAlt, profile: appState.editingProfile ?? ConfigurationProfile()),
+            rows: LibraryRowCodec.dicts(for: .rulesAlt, profile: appState.editingProfile ?? ConfigurationProfile()),
             onCommit: { id, dict in
                 appState.updateDb { d in
                     guard let idx = editingProfileIndex(d) else { return }
@@ -191,16 +205,15 @@ struct FeeRulesView: View {
                     d.configurationProfiles[idx].updatedAt = nowISO()
                 }
             },
-            onDelete: { indices in
-                let profile = appState.editingProfile ?? ConfigurationProfile()
-                let dicts = LibraryRowCodec.dicts(for: .rulesAlt, profile: profile)
-                let ids = Set(indices.compactMap { $0 < dicts.count ? dicts[$0]["id"] : nil }.compactMap { $0 })
+            onDelete: { ids in
                 appState.updateDb { d in
                     guard let idx = editingProfileIndex(d) else { return }
                     LibraryRowCodec.delete(ids: ids, viewKey: .rulesAlt, profile: &d.configurationProfiles[idx])
                     d.configurationProfiles[idx].updatedAt = nowISO()
                 }
-            }
+            },
+            emptyTitle: "暂无关联规则",
+            emptyMessage: "点“新增一行”添加备选关联规则。"
         )
     }
 

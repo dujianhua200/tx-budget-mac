@@ -1,8 +1,10 @@
 #if os(macOS)
 import SwiftUI
 
-/// 配置方案：列表 / 新建 / 复制 / 重命名 / 删除（占用检查）/ 导出方案文件 / 导入方案文件 / 设为新建默认 / 整库备份。
-/// 编辑目标与新建默认彻底分离：【编辑内容】只置 editingProfileId 并跳基础库页；【设为默认】只影响新建工程。
+/// 配置方案（v2.0.0 卡片呈现）：新建 / 复制 / 重命名 / 删除（占用检查）/ 导出方案文件 /
+/// 导入方案文件 / 设为新建默认 / 整库备份。
+/// 编辑目标与新建默认彻底分离：【编辑内容】只置 editingProfileId 并跳资料库页；
+/// 【设为默认】只影响新建工程（逻辑与 v1 一致，仅呈现重做）。
 struct ProfilesView: View {
     @EnvironmentObject private var appState: AppState
     @State private var newName = ""
@@ -16,9 +18,8 @@ struct ProfilesView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("配置方案").font(.headline)
-            Text("每套方案拥有独立完整的一套库、费率、规则，不同方案之间数据完全隔离。")
-                .foregroundColor(.secondary).font(.caption)
+            PageHeader(title: "配置方案",
+                       subtitle: "每套方案拥有独立完整的一套库、费率、规则，不同方案之间数据完全隔离")
             HStack(spacing: 8) {
                 TextField("新方案名称", text: $newName).frame(width: 220)
                 Picker("以…为模板", selection: $templateId) {
@@ -33,47 +34,17 @@ struct ProfilesView: View {
                 Button("整库备份") { exportBackup() }
             }
             .controlSize(.small)
-            Table(appState.db.configurationProfiles) {
-                TableColumn("方案名") { p in
-                    if renameId == p.id {
-                        HStack {
-                            TextField("方案名", text: $renameValue)
-                                .textFieldStyle(.roundedBorder).frame(width: 180)
-                            Button("保存") { rename(p) }.controlSize(.small)
-                            Button("取消") { renameId = nil }.controlSize(.small)
-                        }
-                    } else {
-                        HStack {
-                            Text(p.name)
-                            Button("重命名") {
-                                renameId = p.id
-                                renameValue = p.name
-                            }.controlSize(.small)
-                        }
+
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    ForEach(appState.db.configurationProfiles, id: \.id) { p in
+                        profileCard(p)
                     }
                 }
-                TableColumn("来源") { p in Text(p.source) }
-                TableColumn("工程数") { p in Text("\(projectsOf(p.id).count)") }
-                TableColumn("状态") { p in Text(statusText(p)) }
-                TableColumn("操作") { p in
-                    HStack {
-                        Button("编辑内容") {
-                            appState.setEditingProfile(p.id)
-                            appState.nav = .libraries(.quotas)
-                            appState.showToast("正在编辑方案“\(p.name)”")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        Button("设为默认") { appState.setDefaultProfile(p.id) }
-                            .disabled(appState.db.settings.activeProfileId == p.id)
-                        Button("复制") { duplicate(p) }
-                        Button("导出") { exportProfile(p) }
-                        Button("删除") { askDelete(p) }
-                            .tint(.red)
-                    }.controlSize(.small)
-                }
+                .padding(.vertical, 2)
             }
-            .tableStyle(.inset)
         }
+        .padding(Theme.pagePadding)
         .alert("删除配置方案“\(deleteProfile?.name ?? "")”？", isPresented: $showDeleteConfirm) {
             Button("取消", role: .cancel) { deleteProfile = nil }
             Button("确认删除", role: .destructive) {
@@ -90,8 +61,6 @@ struct ProfilesView: View {
             get: { blockedProfile != nil },
             set: { if !$0 { blockedProfile = nil } }
         )) {
-            // 被占用方案删除：Alert 的 message 只能放 Text，无法让用户选切换目标；
-            // 改用 sheet，Picker 自选目标方案，一步完成“切换工程 + 删除方案”。
             if let p = blockedProfile {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("删除方案“\(p.name)”").font(.headline)
@@ -124,7 +93,67 @@ struct ProfilesView: View {
         }
     }
 
-    /// 被占用方案删除时可切换的目标方案（排除自身）。
+    private func profileCard(_ p: ConfigurationProfile) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                if renameId == p.id {
+                    TextField("方案名", text: $renameValue)
+                        .textFieldStyle(.roundedBorder).frame(width: 220)
+                    Button("保存") { rename(p) }.controlSize(.small)
+                    Button("取消") { renameId = nil }.controlSize(.small)
+                } else {
+                    Text(p.name).font(.headline)
+                    Button("重命名") {
+                        renameId = p.id
+                        renameValue = p.name
+                    }.controlSize(.small)
+                }
+                Spacer()
+                ForEach(statusBadges(p), id: \.self) { badge in
+                    Text(badge)
+                        .font(.caption2).fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 7).padding(.vertical, 2)
+                        .background(Theme.accent)
+                        .cornerRadius(7)
+                }
+            }
+            HStack(spacing: 14) {
+                Text("来源：\(p.source.isEmpty ? "—" : p.source)")
+                Text("工程数：\(projectsOf(p.id).count)")
+                Text("定额 \(p.libraries.quotas.count) 条 · 材料 \(p.libraries.materials.count) 条")
+                Text("更新：\(dateTimeText(p.updatedAt))")
+            }
+            .font(.caption).foregroundColor(.secondary)
+            HStack(spacing: 8) {
+                Button("编辑内容") {
+                    appState.setEditingProfile(p.id)
+                    appState.nav = .libraries(.quotas)
+                    appState.showToast("正在编辑方案“\(p.name)”")
+                }
+                .buttonStyle(.borderedProminent)
+                Button("设为默认") { appState.setDefaultProfile(p.id) }
+                    .disabled(appState.db.settings.activeProfileId == p.id)
+                Button("复制") { duplicate(p) }
+                Button("导出") { exportProfile(p) }
+                Spacer()
+                Button("删除") { askDelete(p) }
+                    .tint(.red)
+            }
+            .controlSize(.small)
+        }
+        .cardStyle()
+    }
+
+    private func statusBadges(_ p: ConfigurationProfile) -> [String] {
+        var badges: [String] = []
+        if appState.db.settings.activeProfileId == p.id { badges.append("新建默认") }
+        if (appState.db.settings.editingProfileId ?? appState.db.settings.activeProfileId) == p.id {
+            badges.append("正在编辑")
+        }
+        return badges
+    }
+
     private var blockedOthers: [ConfigurationProfile] {
         guard let p = blockedProfile else { return [] }
         return appState.db.configurationProfiles.filter { $0.id != p.id }
@@ -132,15 +161,6 @@ struct ProfilesView: View {
 
     private func projectsOf(_ pid: String) -> [ProjectRecord] {
         appState.db.projects.filter { $0.profileId == pid }
-    }
-
-    private func statusText(_ p: ConfigurationProfile) -> String {
-        var parts: [String] = []
-        if appState.db.settings.activeProfileId == p.id { parts.append("新建默认") }
-        if (appState.db.settings.editingProfileId ?? appState.db.settings.activeProfileId) == p.id {
-            parts.append("正在编辑")
-        }
-        return parts.joined(separator: " · ")
     }
 
     private func createNewProfile() {
