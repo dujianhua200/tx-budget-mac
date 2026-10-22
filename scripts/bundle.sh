@@ -24,6 +24,22 @@ mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp .build/release/TXBudget "$APP_DIR/Contents/MacOS/TXBudget"
 chmod +x "$APP_DIR/Contents/MacOS/TXBudget"
 
+# SwiftPM 资源包（内置完整库 full-library.json，v2.1.0）：Bundle.module 运行时从
+# Contents/Resources 找它；缺失即停，不出没有完整库的包（与图标同等对待）。
+RES_BUNDLE=""
+for cand in ".build/release/TXBudget_TXBudget.bundle" ".build/release/TXBudget_TXBudget.resources"; do
+  if [[ -d "$cand" ]]; then RES_BUNDLE="$cand"; break; fi
+done
+if [[ -z "$RES_BUNDLE" ]]; then
+  echo "错误：缺少 SwiftPM 资源包（TXBudget_TXBudget.bundle，内置完整库未构建）" >&2
+  exit 1
+fi
+cp -R "$RES_BUNDLE" "$APP_DIR/Contents/Resources/"
+if [[ ! -f "$APP_DIR/Contents/Resources/$(basename "$RES_BUNDLE")/full-library.json" ]]; then
+  echo "错误：资源包内缺少 full-library.json" >&2
+  exit 1
+fi
+
 # 图标：iconset 必须存在（仓库内），iconutil 只在 macOS 上有。
 if [[ ! -d "Assets/AppIcon.iconset" ]]; then
   echo "错误：缺少 Assets/AppIcon.iconset（图标集未提交进仓库）" >&2

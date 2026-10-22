@@ -8,7 +8,8 @@ let package = Package(
         .executable(name: "TXBudget", targets: ["TXBudget"]),
     ],
     targets: [
-        .executableTarget(name: "TXBudget", path: "Sources/TXBudget"),
+        .executableTarget(name: "TXBudget", path: "Sources/TXBudget",
+                          resources: [.copy("Resources/full-library.json")]),
         .testTarget(name: "TXBudgetTests", dependencies: ["TXBudget"], path: "Tests/TXBudgetTests",
                     resources: [.copy("Fixtures")]),
     ]
