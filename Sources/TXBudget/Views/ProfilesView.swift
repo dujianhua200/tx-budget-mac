@@ -20,6 +20,8 @@ struct ProfilesView: View {
         VStack(alignment: .leading, spacing: 12) {
             PageHeader(title: "配置方案",
                        subtitle: "每套方案拥有独立完整的一套库、费率、规则，不同方案之间数据完全隔离")
+            Text("点「编辑内容」后，资料库与取费规则编辑的就是该方案（也可在资料库/取费规则页顶部的“当前方案”下拉直接切换）；「设为默认」只影响新建工程。")
+                .font(.caption).foregroundColor(.secondary)
             HStack(spacing: 8) {
                 TextField("新方案名称", text: $newName).frame(width: 220)
                 Picker("以…为模板", selection: $templateId) {
@@ -129,7 +131,7 @@ struct ProfilesView: View {
                 Button("编辑内容") {
                     appState.setEditingProfile(p.id)
                     appState.nav = .libraries(.quotas)
-                    appState.showToast("正在编辑方案“\(p.name)”")
+                    appState.showToast("资料库与取费规则现在编辑方案“\(p.name)”")
                 }
                 .buttonStyle(.borderedProminent)
                 Button("设为默认") { appState.setDefaultProfile(p.id) }
@@ -146,11 +148,11 @@ struct ProfilesView: View {
     }
 
     private func statusBadges(_ p: ConfigurationProfile) -> [String] {
+        // v2.0.1：删除“正在编辑”徽标——它按 (editingProfileId ?? activeProfileId)
+        // 恒有一家显示、无法消除且无处解释，是隐藏全局模式；编辑目标改由
+        // 资料库/取费规则页顶部的“当前方案”下拉直接呈现与切换。
         var badges: [String] = []
         if appState.db.settings.activeProfileId == p.id { badges.append("新建默认") }
-        if (appState.db.settings.editingProfileId ?? appState.db.settings.activeProfileId) == p.id {
-            badges.append("正在编辑")
-        }
         return badges
     }
 

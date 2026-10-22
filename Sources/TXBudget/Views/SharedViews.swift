@@ -109,6 +109,42 @@ func indexed<T>(_ rows: [T]) -> [IndexedRow<T>] {
     rows.enumerated().map { IndexedRow(id: $0.offset, row: $0.element) }
 }
 
+/// 资料库 / 取费规则共用的“当前方案”选择器横幅（v2.0.1）。
+/// 原设计把 editingProfileId 做成隐藏的全局模式（配置方案页一个无法消除的
+/// “正在编辑”徽标），用户无从理解；v2.0.1 改为编辑现场可见、可直接切换的
+/// 下拉选择器：选哪套，资料库与取费规则就编辑哪套。
+struct ProfilePickerBanner: View {
+    @EnvironmentObject private var appState: AppState
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "pencil.circle.fill").foregroundColor(Theme.accent)
+            Text("当前方案：")
+                .font(.callout).foregroundColor(.secondary)
+            Picker("当前方案", selection: editingProfileBinding) {
+                ForEach(appState.db.configurationProfiles, id: \.id) { p in
+                    Text(p.name).tag(p.id)
+                }
+            }
+            .labelsHidden()
+            .frame(width: 200)
+            Text("（资料库与取费规则编辑的就是该方案；“新建默认”只影响新建工程）")
+                .font(.caption).foregroundColor(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(Theme.accent.opacity(0.07))
+        .cornerRadius(8)
+    }
+
+    private var editingProfileBinding: Binding<String> {
+        Binding(
+            get: { appState.db.settings.editingProfileId ?? appState.db.settings.activeProfileId },
+            set: { appState.setEditingProfile($0) }
+        )
+    }
+}
+
 /// 简单确认框（标题 + 影响说明 + 确认/取消）。
 struct ConfirmBox: View {
     var title: String

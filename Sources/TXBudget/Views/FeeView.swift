@@ -2,7 +2,7 @@
 import SwiftUI
 
 /// 费用（v2.0.0）：表一总表预览 / 表二取费 / 表五其他费 三标签。
-/// 表二折前 = 左树 + 右表（费率可编辑，写回正在编辑方案，同 v1）；
+/// 表二折前 = 左树 + 右表（费率可编辑，写回资料库当前方案，同 v1）；
 /// 表二折后 = 同结构只读（金额取 table2After，计算式为折前口径，页面已注明）。
 struct FeesView: View {
     @EnvironmentObject private var appState: AppState
@@ -95,7 +95,7 @@ struct FeesView: View {
                 .labelsHidden()
                 .frame(width: 150)
                 Text(t2Mode == "before"
-                     ? "费率编辑写回正在编辑的方案“\(appState.editingProfile?.name ?? "—")”；金额为折前表二。"
+                     ? "费率将写入资料库方案“\(appState.editingProfile?.name ?? "—")”；金额为折前表二。"
                      : "折后金额由折前按打折规则计算（只读）；计算式列为折前口径。费率编辑请切回折前。")
                     .foregroundColor(.secondary).font(.caption)
             }

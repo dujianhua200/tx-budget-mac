@@ -12,21 +12,8 @@ struct FeeRulesView: View {
         VStack(alignment: .leading, spacing: 12) {
             PageHeader(title: "取费规则 · \(tab.label)",
                        subtitle: "取费规则随配置方案保存；不同方案完全隔离")
-            HStack(spacing: 10) {
-                Image(systemName: "pencil.circle.fill").foregroundColor(Theme.accent)
-                Text("正在编辑方案：")
-                    .font(.callout).foregroundColor(.secondary)
-                Text(appState.editingProfile?.name ?? "—")
-                    .font(.callout).fontWeight(.semibold)
-                Text("（新建工程默认方案不受这里影响）")
-                    .font(.caption).foregroundColor(.secondary)
-                Spacer()
-                Button("切换编辑方案") { appState.nav = .profiles }
-                    .controlSize(.small)
-            }
-            .padding(.horizontal, 12).padding(.vertical, 8)
-            .background(Theme.accent.opacity(0.07))
-            .cornerRadius(8)
+            // 当前方案选择器（v2.0.1：原静态横幅改真下拉，现场可切换编辑目标）
+            ProfilePickerBanner()
             switch tab {
             case .rates:
                 ratesView

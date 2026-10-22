@@ -2,6 +2,7 @@
 import SwiftUI
 
 /// 基础库视图（v2.0.0）：编辑目标 = settings.editingProfileId，不碰 activeProfileId。
+/// v2.0.1：页首横幅改为“当前方案”下拉选择器（ProfilePickerBanner），现场可切换。
 /// 统一专业表格 ProTable（搜索/排序/双击编辑/复制行/删除确认）；行字典经
 /// LibraryRowCodec 提交时解析回具体行类型。Excel 导入/导出沿用 v1 组件。
 struct LibrariesView: View {
@@ -12,22 +13,8 @@ struct LibrariesView: View {
         VStack(alignment: .leading, spacing: 12) {
             PageHeader(title: viewKey.label,
                        subtitle: "资料库 · 编辑的是指定方案的库，与其他方案完全隔离")
-            // 编辑目标横幅
-            HStack(spacing: 10) {
-                Image(systemName: "pencil.circle.fill").foregroundColor(Theme.accent)
-                Text("正在编辑方案：")
-                    .font(.callout).foregroundColor(.secondary)
-                Text(appState.editingProfile?.name ?? "—")
-                    .font(.callout).fontWeight(.semibold)
-                Text("（新建工程默认方案不受这里影响）")
-                    .font(.caption).foregroundColor(.secondary)
-                Spacer()
-                Button("切换编辑方案") { appState.nav = .profiles }
-                    .controlSize(.small)
-            }
-            .padding(.horizontal, 12).padding(.vertical, 8)
-            .background(Theme.accent.opacity(0.07))
-            .cornerRadius(8)
+            // 当前方案选择器（v2.0.1：原静态横幅改真下拉，现场可切换编辑目标）
+            ProfilePickerBanner()
             if let kind = ImportLibraryKind(libraryViewKey: viewKey) {
                 ExcelImportExportButtons(
                     kind: kind,

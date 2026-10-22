@@ -14,15 +14,15 @@ struct SettingsView: View {
                     HStack(spacing: 8) {
                         Button("整库备份") { exportBackup() }
                         Button("导入方案文件") { importProfile() }
-                        Button("导出正在编辑的方案") { exportEditingProfile() }
+                        Button("导出当前资料库方案") { exportEditingProfile() }
                     }
                     .controlSize(.small)
                 }
                 SectionCard(title: "当前方案") {
                     VStack(alignment: .leading, spacing: 6) {
-                        infoRow("正在编辑方案", appState.editingProfile?.name ?? "—")
+                        infoRow("资料库方案", appState.editingProfile?.name ?? "—")
                         infoRow("新建工程默认方案", defaultProfileName)
-                        Text("编辑目标与新建默认相互独立：在配置方案页分别设置。")
+                        Text("资料库方案与新建默认相互独立：前者在资料库/取费规则页顶部切换，后者在配置方案页设为默认。")
                             .font(.caption).foregroundColor(.secondary)
                     }
                 }

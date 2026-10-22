@@ -179,7 +179,7 @@ struct SidebarView: View {
         .listStyle(.sidebar)
         .navigationTitle(appDisplayName)
         .safeAreaInset(edge: .bottom) {
-            Text("正在编辑方案：\(appState.editingProfile?.name ?? "—")")
+            Text("资料库方案：\(appState.editingProfile?.name ?? "—")")
                 .font(.caption).foregroundColor(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 12).padding(.vertical, 6)
