@@ -15,6 +15,7 @@ final class FullLibraryLookupTests: XCTestCase {
             "/tmp/App.app/Contents/Resources/TXBudget_TXBudget.bundle/full-library.json",
             "/tmp/App.app/Contents/Resources/full-library.json",
             "/tmp/App.app/TXBudget_TXBudget.bundle/full-library.json",
+            "/tmp/TXBudget_TXBudget.bundle/full-library.json",
         ])
     }
 
@@ -23,6 +24,7 @@ final class FullLibraryLookupTests: XCTestCase {
         let urls = fullLibraryCandidateURLs(resourceURL: nil, bundleURL: bundle)
         XCTAssertEqual(urls.map(\.path), [
             "/tmp/build/debug/TXBudget_TXBudget.bundle/full-library.json",
+            "/tmp/build/TXBudget_TXBudget.bundle/full-library.json",
         ])
     }
 

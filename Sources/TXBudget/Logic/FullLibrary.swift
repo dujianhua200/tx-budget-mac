@@ -25,7 +25,10 @@ public func loadBundledFullLibrary() -> LibrarySet? {
 /// full-library.json 的候选查找路径（有序，纯函数，供单测钉死）：
 /// 1. 主包 Resources 内的 SwiftPM 资源包副本；
 /// 2. 主包 Resources 根下的松散副本（v2.5.1 起 bundle.sh 双保险落盘）；
-/// 3. bundleURL 同级的资源包（开发/测试布局下资源包与包根同目录）。
+/// 3. bundleURL 同级的资源包（开发/测试布局下资源包与包根同目录）；
+/// 4. bundleURL 上一级目录的资源包（v2.6.0 补：SPM 构建产物布局——macOS
+///    `swift test` 时资源包与 .xctest 测试包同级，不在其内部；v2.6.0 首跑 CI
+///    即因缺此候选在 macOS 测试布局下找不到完整库）。
 public func fullLibraryCandidateURLs(resourceURL: URL?, bundleURL: URL) -> [URL] {
     var urls: [URL] = []
     if let resourceURL {
@@ -35,6 +38,9 @@ public func fullLibraryCandidateURLs(resourceURL: URL?, bundleURL: URL) -> [URL]
         urls.append(resourceURL.appendingPathComponent("full-library.json"))
     }
     urls.append(bundleURL
+        .appendingPathComponent("TXBudget_TXBudget.bundle", isDirectory: true)
+        .appendingPathComponent("full-library.json"))
+    urls.append(bundleURL.deletingLastPathComponent()
         .appendingPathComponent("TXBudget_TXBudget.bundle", isDirectory: true)
         .appendingPathComponent("full-library.json"))
     return urls
