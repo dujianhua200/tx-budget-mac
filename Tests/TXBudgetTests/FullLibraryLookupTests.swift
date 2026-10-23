@@ -13,9 +13,12 @@ final class FullLibraryLookupTests: XCTestCase {
         let urls = fullLibraryCandidateURLs(resourceURL: resource, bundleURL: bundle)
         XCTAssertEqual(urls.map(\.path), [
             "/tmp/App.app/Contents/Resources/TXBudget_TXBudget.bundle/full-library.json",
+            "/tmp/App.app/Contents/Resources/TXBudget_TXBudget.resources/full-library.json",
             "/tmp/App.app/Contents/Resources/full-library.json",
             "/tmp/App.app/TXBudget_TXBudget.bundle/full-library.json",
+            "/tmp/App.app/TXBudget_TXBudget.resources/full-library.json",
             "/tmp/TXBudget_TXBudget.bundle/full-library.json",
+            "/tmp/TXBudget_TXBudget.resources/full-library.json",
         ])
     }
 
@@ -24,7 +27,9 @@ final class FullLibraryLookupTests: XCTestCase {
         let urls = fullLibraryCandidateURLs(resourceURL: nil, bundleURL: bundle)
         XCTAssertEqual(urls.map(\.path), [
             "/tmp/build/debug/TXBudget_TXBudget.bundle/full-library.json",
+            "/tmp/build/debug/TXBudget_TXBudget.resources/full-library.json",
             "/tmp/build/TXBudget_TXBudget.bundle/full-library.json",
+            "/tmp/build/TXBudget_TXBudget.resources/full-library.json",
         ])
     }
 
@@ -39,7 +44,12 @@ final class FullLibraryLookupTests: XCTestCase {
         try Data("{}".utf8).write(to: target)
 
         // a/b/c/full-library.json 位于第 3 层：深度上限 4 找得到，上限 2 找不到。
-        XCTAssertEqual(findFullLibraryJSON(under: root, maxDepth: 4)?.path, target.path)
+        // 路径比较两侧都先解析符号链接：macOS 上 temporaryDirectory 在 /var
+        // （→ /private/var 符号链接）下，而 contentsOfDirectory 返回解析后的
+        // 路径，未解析直接比会对不上（v2.6.0 CI 实测：Linux /tmp 无此差异）。
+        XCTAssertEqual(findFullLibraryJSON(under: root, maxDepth: 4)?
+            .resolvingSymlinksInPath().path,
+                       target.resolvingSymlinksInPath().path)
         XCTAssertNil(findFullLibraryJSON(under: root, maxDepth: 2))
         XCTAssertNil(findFullLibraryJSON(under: root.appendingPathComponent("missing"),
                                           maxDepth: 4))

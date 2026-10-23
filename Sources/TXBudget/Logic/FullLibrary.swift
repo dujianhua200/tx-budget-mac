@@ -22,47 +22,77 @@ public func loadBundledFullLibrary() -> LibrarySet? {
     return nil
 }
 
-/// full-library.json 的候选查找路径（有序，纯函数，供单测钉死）：
-/// 1. 主包 Resources 内的 SwiftPM 资源包副本；
-/// 2. 主包 Resources 根下的松散副本（v2.5.1 起 bundle.sh 双保险落盘）；
-/// 3. bundleURL 同级的资源包（开发/测试布局下资源包与包根同目录）；
-/// 4. bundleURL 上一级目录的资源包（v2.6.0 补：SPM 构建产物布局——macOS
-///    `swift test` 时资源包与 .xctest 测试包同级，不在其内部；v2.6.0 首跑 CI
-///    即因缺此候选在 macOS 测试布局下找不到完整库）。
+/// full-library.json 的候选查找路径（有序，纯函数，供单测钉死）。
+/// 资源包目录名有两种形态（SwiftPM 版本/平台差异，scripts/bundle.sh 打包时
+/// 同样双名兼容）：`TXBudget_TXBudget.bundle` 与 `TXBudget_TXBudget.resources`，
+/// 候选对两名全覆盖。基目录依次为：
+/// 1. 主包 Resources（打包 .app：资源包副本 + v2.5.1 松散副本）；
+/// 2. bundleURL（开发/测试布局下资源包与包根同目录）；
+/// 3. bundleURL 上一级（SPM 构建产物布局：资源包与 .xctest 测试包同级；
+///    v2.6.0 首跑 CI 在 macOS 上即因只试 .bundle 名 + 缺此基目录而找不到）。
 public func fullLibraryCandidateURLs(resourceURL: URL?, bundleURL: URL) -> [URL] {
+    let bundleNames = ["TXBudget_TXBudget.bundle", "TXBudget_TXBudget.resources"]
     var urls: [URL] = []
     if let resourceURL {
-        urls.append(resourceURL
-            .appendingPathComponent("TXBudget_TXBudget.bundle", isDirectory: true)
-            .appendingPathComponent("full-library.json"))
+        for name in bundleNames {
+            urls.append(resourceURL
+                .appendingPathComponent(name, isDirectory: true)
+                .appendingPathComponent("full-library.json"))
+        }
         urls.append(resourceURL.appendingPathComponent("full-library.json"))
     }
-    urls.append(bundleURL
-        .appendingPathComponent("TXBudget_TXBudget.bundle", isDirectory: true)
-        .appendingPathComponent("full-library.json"))
-    urls.append(bundleURL.deletingLastPathComponent()
-        .appendingPathComponent("TXBudget_TXBudget.bundle", isDirectory: true)
-        .appendingPathComponent("full-library.json"))
+    for base in [bundleURL, bundleURL.deletingLastPathComponent()] {
+        for name in bundleNames {
+            urls.append(base
+                .appendingPathComponent(name, isDirectory: true)
+                .appendingPathComponent("full-library.json"))
+        }
+    }
     return urls
 }
 
 /// 实际查找序列：候选路径在前（按序试读），其后是兜底限深递归命中的路径
-/// （resourceURL 与 bundleURL 之下，最深 4 层，找任意 full-library.json）。
+/// （resourceURL 与 bundleURL 之下最深 4 层；bundleURL 上一级最深 2 层——
+/// SPM 构建产物布局下资源包与测试包同级，2 层即达包内文件；
+/// 源码树根的 .build 最深 5 层，见 buildDirAnchor 说明）。
 func fullLibraryLookupURLs() -> [URL] {
     let resourceURL = Bundle.main.resourceURL
     let bundleURL = Bundle.main.bundleURL
     var urls = fullLibraryCandidateURLs(resourceURL: resourceURL, bundleURL: bundleURL)
-    var roots: [URL] = []
-    if let resourceURL { roots.append(resourceURL) }
-    roots.append(bundleURL)
-    for root in roots {
-        if let found = findFullLibraryJSON(under: root, maxDepth: 4) {
+    var roots: [(url: URL, depth: Int)] = []
+    if let resourceURL { roots.append((resourceURL, 4)) }
+    roots.append((bundleURL, 4))
+    roots.append((bundleURL.deletingLastPathComponent(), 2))
+    if let buildDir = sourceTreeBuildDirectory() {
+        roots.append((buildDir, 5))
+    }
+    for (root, depth) in roots {
+        if let found = findFullLibraryJSON(under: root, maxDepth: depth) {
             urls.append(found)
         }
     }
     // 去重保序。
     var seen = Set<String>()
     return urls.filter { seen.insert($0.path).inserted }
+}
+
+/// 源码树根的 .build 目录（存在才返回）：以本源文件编译时路径（#filePath）
+/// 上溯四级（Logic → TXBudget → Sources → 仓库根）定位。用途 = 复刻 SwiftPM
+/// 生成访问器的“构建绝对路径”兜底：macOS `swift test` 时 Bundle.main 是
+/// xctest 工具自身的包（/Applications/Xcode…/usr/bin），与构建产物无关，
+/// 只有源码锚点能找到 .build 下的资源包（v2.6.0 CI 实测定位）。
+/// 打包后的 .app 在用户机器上该路径不存在（构建机路径），fileExists 门跳过。
+func sourceTreeBuildDirectory() -> URL? {
+    let root = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let buildDir = root.appendingPathComponent(".build", isDirectory: true)
+    var isDirectory: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: buildDir.path, isDirectory: &isDirectory),
+          isDirectory.boolValue else { return nil }
+    return buildDir
 }
 
 /// 在目录下限深（maxDepth 层）广度优先找 full-library.json；找不到返回 nil，永不 trap。
