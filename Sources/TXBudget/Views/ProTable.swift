@@ -19,6 +19,16 @@ struct ProTable: View {
     var onDuplicate: ((String) -> Void)? = nil
     /// 选择变化回调（v2.4.0 工作量关联区用；默认 nil，其他使用方不受影响）。
     var onSelectionChange: ((Set<String>) -> Void)? = nil
+    /// 行双击回调（v2.5.0，docs/v2-ui-design.md §12.4）：仅非编辑列的双击触发
+    /// （可编辑列双击仍进编辑）；默认 nil，其他使用方不受影响。
+    var onRowDoubleClick: ((String) -> Void)? = nil
+    /// 表格标识（v2.5.0 §12.2）：非空才启用列宽拖动改宽 + UserDefaults 持久化；
+    /// nil 时列宽行为与旧版完全一致。
+    var tableId: String? = nil
+    /// 弹性列 key（v2.5.0 §12.2）：该列吃掉剩余宽度，minWidth = 解析宽与
+    /// flexibleMinWidth 的较大者；默认 nil（无弹性列）。
+    var flexibleKey: String? = nil
+    var flexibleMinWidth: CGFloat = 200
     /// 不可编辑的列 key（显示为纯文本）。
     var readOnlyKeys: Set<String> = []
     /// 整体只读（预览模式：无新增/删除/编辑，仅搜索与排序）。
@@ -38,6 +48,9 @@ struct ProTable: View {
     @State private var editing: EditingCell?
     @State private var pendingDelete: Set<String> = []
     @State private var showDeleteConfirm = false
+    /// 用户拖定的列宽（v2.5.0：优先于 columnWidths 与 kind 默认；tableId 非空时持久化）。
+    @State private var userWidths: [String: CGFloat] = [:]
+    @State private var dragStartWidths: [String: CGFloat] = [:]
     @FocusState private var searchFocused: Bool
 
     struct EditingCell: Equatable {
@@ -66,13 +79,76 @@ struct ProTable: View {
     }
 
     private func columnWidth(_ col: LibraryColumn) -> CGFloat {
+        if let w = userWidths[col.key] { return w }
         if let w = columnWidths[col.key] { return w }
         switch col.kind {
-        case .number: return 96
+        case .number: return 88
         case .select: return 116
         case .checkbox: return 44
-        case .text: return 140
+        case .text: return 150
         }
+    }
+
+    /// 单元格框架：弹性列吃掉剩余宽度（minWidth 兜底），其余列固定解析宽。
+    @ViewBuilder
+    private func framedCell<Content: View>(_ col: LibraryColumn,
+                                           alignment: Alignment,
+                                           @ViewBuilder content: () -> Content) -> some View {
+        if col.key == flexibleKey {
+            content().frame(minWidth: max(columnWidth(col), flexibleMinWidth),
+                            maxWidth: .infinity, alignment: alignment)
+        } else {
+            content().frame(width: columnWidth(col), alignment: alignment)
+        }
+    }
+
+    // MARK: - 列宽持久化（v2.5.0 §12.2）
+
+    private var widthsDefaultsKey: String? {
+        tableId.map { "protable.widths.\($0)" }
+    }
+
+    private func loadUserWidths() {
+        guard let key = widthsDefaultsKey,
+              let data = UserDefaults.standard.data(forKey: key),
+              let decoded = try? JSONDecoder().decode([String: Double].self, from: data)
+        else { return }
+        userWidths = decoded.mapValues { CGFloat($0) }
+    }
+
+    private func saveUserWidths() {
+        guard let key = widthsDefaultsKey,
+              let data = try? JSONEncoder().encode(userWidths.mapValues { Double($0) })
+        else { return }
+        UserDefaults.standard.set(data, forKey: key)
+    }
+
+    /// 列头右缘拖动手柄：拖动改宽（36–640），双击恢复默认（清用户宽）。
+    private func resizeHandle(_ col: LibraryColumn) -> some View {
+        Color.clear
+            .frame(width: 8)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+            }
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { value in
+                        if dragStartWidths[col.key] == nil {
+                            dragStartWidths[col.key] = columnWidth(col)
+                        }
+                        let start = dragStartWidths[col.key] ?? columnWidth(col)
+                        userWidths[col.key] = min(640, max(36, start + value.translation.width))
+                    }
+                    .onEnded { _ in
+                        dragStartWidths[col.key] = nil
+                        saveUserWidths()
+                    }
+            )
+            .onTapGesture(count: 2) {
+                userWidths[col.key] = nil
+                saveUserWidths()
+            }
     }
 
     private func isEditable(_ col: LibraryColumn) -> Bool {
@@ -117,6 +193,7 @@ struct ProTable: View {
                 totalsRow
             }
         }
+        .onAppear { loadUserWidths() }
         .onChange(of: selection) { newValue in onSelectionChange?(newValue) }
         .alert("删除选中的 \(pendingDelete.count) 条？", isPresented: $showDeleteConfirm) {
             Button("取消", role: .cancel) { pendingDelete.removeAll() }
@@ -195,21 +272,25 @@ struct ProTable: View {
                 Button {
                     toggleSort(col)
                 } label: {
-                    HStack(spacing: 2) {
-                        if col.kind == .number { Spacer() }
-                        Text(col.label)
-                            .font(.caption).fontWeight(.semibold)
-                            .foregroundColor(.secondary)
-                        if sort?.key == col.key {
-                            Text(sort?.ascending == true ? "▲" : "▼")
-                                .font(.system(size: 8))
+                    framedCell(col, alignment: col.kind == .number ? .trailing : .leading) {
+                        HStack(spacing: 2) {
+                            if col.kind == .number { Spacer() }
+                            Text(col.label)
+                                .font(.caption).fontWeight(.semibold)
                                 .foregroundColor(.secondary)
+                            if sort?.key == col.key {
+                                Text(sort?.ascending == true ? "▲" : "▼")
+                                    .font(.system(size: 8))
+                                    .foregroundColor(.secondary)
+                            }
                         }
+                        .contentShape(Rectangle())
                     }
-                    .frame(width: columnWidth(col), alignment: col.kind == .number ? .trailing : .leading)
-                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .overlay(alignment: .trailing) {
+                    if tableId != nil { resizeHandle(col) }
+                }
             }
             Spacer(minLength: 0)
         }
@@ -243,9 +324,9 @@ struct ProTable: View {
                 .font(.caption).foregroundColor(.secondary)
                 .frame(width: 30, alignment: .trailing)
             ForEach(columns, id: \.key) { col in
-                cellView(wrap: wrap, col: col)
-                    .frame(width: columnWidth(col),
-                           alignment: col.kind == .number ? .trailing : .leading)
+                framedCell(col, alignment: col.kind == .number ? .trailing : .leading) {
+                    cellView(wrap: wrap, col: col)
+                }
             }
             Spacer(minLength: 0)
         }
@@ -292,6 +373,8 @@ struct ProTable: View {
                     .pickerStyle(.menu)
                 } else {
                     Text(value)
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 2) { handleCellDoubleTap(wrap: wrap, col: col) }
                 }
             case .number:
                 Text(value.isEmpty ? "—" : value)
@@ -299,14 +382,24 @@ struct ProTable: View {
                     .foregroundColor(value.isEmpty ? .secondary : .primary)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .contentShape(Rectangle())
-                    .onTapGesture(count: 2) { startEdit(wrap: wrap, col: col) }
+                    .onTapGesture(count: 2) { handleCellDoubleTap(wrap: wrap, col: col) }
             case .text:
                 Text(value)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
-                    .onTapGesture(count: 2) { startEdit(wrap: wrap, col: col) }
+                    .onTapGesture(count: 2) { handleCellDoubleTap(wrap: wrap, col: col) }
             }
+        }
+    }
+
+    /// 单元格双击：可编辑列进编辑；只读列在设了 onRowDoubleClick 时回调（v2.5.0 选型号）。
+    private func handleCellDoubleTap(wrap: RowWrap, col: LibraryColumn) {
+        if isEditable(col) {
+            startEdit(wrap: wrap, col: col)
+        } else if let onRowDoubleClick {
+            selection = [wrap.id]
+            onRowDoubleClick(wrap.id)
         }
     }
 
@@ -363,17 +456,21 @@ struct ProTable: View {
                     .frame(width: 30)
                 ForEach(columns, id: \.key) { col in
                     if totalsKeys.contains(col.key) {
-                        Text(num2(tableColumnTotal(rows, key: col.key)))
-                            .fontWeight(.bold)
-                            .monospacedDigit()
-                            .frame(width: columnWidth(col), alignment: .trailing)
+                        framedCell(col, alignment: .trailing) {
+                            Text(num2(tableColumnTotal(rows, key: col.key)))
+                                .fontWeight(.bold)
+                                .monospacedDigit()
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                        }
                     } else if col.key == columns.first?.key {
-                        Text("合计")
-                            .fontWeight(.bold)
-                            .frame(width: columnWidth(col), alignment: .leading)
+                        framedCell(col, alignment: .leading) {
+                            Text("合计")
+                                .fontWeight(.bold)
+                        }
                     } else {
-                        Text("")
-                            .frame(width: columnWidth(col))
+                        framedCell(col, alignment: .leading) {
+                            Text("")
+                        }
                     }
                 }
                 Spacer(minLength: 0)

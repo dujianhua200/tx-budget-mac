@@ -187,6 +187,43 @@ public func effectiveLinks(row: QuantityRow, project: Project, libraries: Librar
     return WorkloadRowLinks(state: state, materials: materials, machines: machines, instruments: instruments)
 }
 
+/// 定额库中与引擎 `quotaByCode` 同口径的首条匹配（编号重复按首条）。
+public func firstQuota(code: String, libraries: LibrarySet) -> QuotaRow? {
+    libraries.quotas.first { $0.code == code }
+}
+
+/// 表三甲逐行贡献（v2.5.0，docs/v2-ui-design.md §12.1）：本行对引擎表三甲的工日贡献。
+/// 引擎口径：按定额聚合 加权量 = Σ 数量×系数（逐行有效性同 `workloadRowState`），
+/// 每定额 技工 = r2(加权量 × 技工单位工日)（普工同理）；逐行贡献 = 参与时
+/// 数量 × 系数 × 单位工日，不参与（孤儿/数量 0/负数/系数无效）= 0。
+/// “工日X0.5”类条目由行系数承载（如系数 0.5），公式必须含系数。
+/// 全部行贡献之和与引擎 techSub/laborSub 仅差每定额一处 r2 舍入（每组 ≤0.005）。
+public func table3ARowContribution(row: QuantityRow, libraries: LibrarySet)
+    -> (tech: Double, labor: Double) {
+    guard let quota = firstQuota(code: row.quota, libraries: libraries) else { return (0, 0) }
+    guard workloadRowState(row: row, libraries: libraries) == .active else { return (0, 0) }
+    let weighted = num(row.qty) * (row.coef ?? 1)
+    return (weighted * num(quota.tech), weighted * num(quota.labor))
+}
+
+// MARK: - 可选型号（变体清单，v2.5.0 §12.4）
+
+/// 某定额编码的可选型号清单（双击选型号的数据源）。
+/// 构成：首项 = 基准项（定额库原名，行变体取此名时引擎只计通用规则，与添加栏
+/// 新行 variant = 定额名的既有行为一致）；其后 = rules 中该编码 kind ∈ {变体, 变体*}
+/// 的 distinct variant（非空、首现顺序，含基准项同名时不重复）。
+/// 定额不在库中 → 空数组。
+public func variantOptions(quota code: String, libraries: LibrarySet) -> [String] {
+    guard let quotaRow = firstQuota(code: code, libraries: libraries) else { return [] }
+    var options: [String] = [quotaRow.name]
+    for rule in libraries.rules where rule.quota == code
+        && (rule.kind == "变体" || rule.kind == "变体*") {
+        let v = rule.variant
+        if !v.isEmpty && !options.contains(v) { options.append(v) }
+    }
+    return options
+}
+
 // MARK: - 写回（纯函数，视图取到工程所属方案后调用；下标越界即无操作）
 
 public func setRuleConsumption(in libraries: inout LibrarySet, ruleIndex: Int, _ value: Double) {

@@ -16,6 +16,7 @@ struct ContentView: View {
                 WorkspaceView()
             }
         }
+        .background { LibraryMaintenanceControls() }
         .tint(Theme.accent)
         .frame(minWidth: 1080, minHeight: 680)
         .alert("数据加载失败", isPresented: Binding(

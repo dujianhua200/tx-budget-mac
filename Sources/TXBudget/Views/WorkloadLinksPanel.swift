@@ -45,13 +45,7 @@ struct WorkloadLinksPanel: View {
                     Text("定额编号不在当前方案的定额库中：本行不参与计算，也没有生效关联。先在资料库补这条定额，或删除本行。")
                         .font(.caption).foregroundColor(.orange)
                 } else {
-                    HStack(alignment: .top, spacing: 14) {
-                        materialColumn(links.materials)
-                        Divider()
-                        equipColumn(title: "机械", links: links.machines, isMachine: true)
-                        Divider()
-                        equipColumn(title: "仪器仪表", links: links.instruments, isMachine: false)
-                    }
+                    linksList(links)
                 }
             } else {
                 Text("在表三甲点选一条工作量，这里显示它要用到的主材、机械、仪器仪表，并可直接修改消耗量、增删关联、改主材价——表三乙、表三丙、表四就是按这些关联自动生成的。")
@@ -82,6 +76,17 @@ struct WorkloadLinksPanel: View {
                 Image(systemName: "link").foregroundColor(Theme.accent)
                 Text("关联区 · 本条工作量的主材 / 机械 / 仪器仪表").font(.headline)
                 Spacer()
+                if selectedRow != nil, links?.state != .orphan {
+                    Menu {
+                        Button("添加主材关联…") { addKind = .material }
+                        Button("添加机械关联…") { addKind = .machine }
+                        Button("添加仪器仪表关联…") { addKind = .instrument }
+                    } label: {
+                        Label("添加关联", systemImage: "plus.circle")
+                    }
+                    .controlSize(.small)
+                    .fixedSize()
+                }
             }
             Text("这里改的是当前方案「\(profile?.name ?? "—")」库的关联，对使用该方案的全部工程生效；只改本工程请用表四材料页的工程级修正（手动调整 / 本工程单价）。")
                 .font(.caption).foregroundColor(.orange)
@@ -102,74 +107,184 @@ struct WorkloadLinksPanel: View {
         .font(.callout)
     }
 
-    // MARK: - 主材组
+    // MARK: - 单列分组清单（v2.5.0 §12.3：三栏并排作废，组头行分隔，一项一行）
 
-    private func materialColumn(_ list: [EffectiveMaterialLink]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            groupHeader("主材", count: list.count) { addKind = .material }
-            if list.isEmpty {
-                Text("无主材关联，点 ＋ 从材料库添加。").font(.caption).foregroundColor(.secondary)
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 2) {
-                        ForEach(list, id: \.ruleIndex) { link in
-                            materialRow(link)
-                            Divider()
-                        }
+    /// 清单列宽（§12.2 原则：代号/规格/单位窄，名称弹性）。
+    private enum ColW {
+        static let code: CGFloat = 84
+        static let spec: CGFloat = 96
+        static let unit: CGFloat = 48
+        static let per: CGFloat = 84
+        static let total: CGFloat = 88
+        static let price: CGFloat = 96
+        static let amount: CGFloat = 92
+        static let ops: CGFloat = 30
+    }
+
+    private func linksList(_ links: WorkloadRowLinks) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 2) {
+                linksColumnHeader
+                if !links.materials.isEmpty {
+                    groupBand("主材", count: links.materials.count) { addKind = .material }
+                    ForEach(links.materials, id: \.ruleIndex) { link in
+                        materialLine(link)
+                        Divider()
                     }
+                }
+                if !links.machines.isEmpty {
+                    groupBand("机械", count: links.machines.count) { addKind = .machine }
+                    ForEach(links.machines, id: \.linkIndex) { link in
+                        equipLine(link, isMachine: true)
+                        Divider()
+                    }
+                }
+                if !links.instruments.isEmpty {
+                    groupBand("仪器仪表", count: links.instruments.count) { addKind = .instrument }
+                    ForEach(links.instruments, id: \.linkIndex) { link in
+                        equipLine(link, isMachine: false)
+                        Divider()
+                    }
+                }
+                if links.materials.isEmpty && links.machines.isEmpty && links.instruments.isEmpty {
+                    Text("本条暂无关联。用右上「添加关联」从材料库 / 价目库添加。")
+                        .font(.caption).foregroundColor(.secondary)
+                        .padding(.vertical, 4)
                 }
             }
         }
-        .frame(minWidth: 300, maxWidth: .infinity, alignment: .leading)
     }
 
-    private func materialRow(_ link: EffectiveMaterialLink) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 6) {
-                Text(link.rule.material).fontWeight(.semibold).lineLimit(1)
-                if !link.rule.spec.isEmpty {
-                    Text(link.rule.spec).foregroundColor(.secondary).lineLimit(1)
+    private var linksColumnHeader: some View {
+        HStack(spacing: 8) {
+            Text("代号").frame(width: ColW.code, alignment: .leading)
+            Text("名称").frame(minWidth: 160, maxWidth: .infinity, alignment: .leading)
+            Text("规格").frame(width: ColW.spec, alignment: .leading)
+            Text("单位").frame(width: ColW.unit, alignment: .leading)
+            Text("单位用量").frame(width: ColW.per, alignment: .trailing)
+            Text("参考用量").frame(width: ColW.total, alignment: .trailing)
+            Text("单价").frame(width: ColW.price, alignment: .trailing)
+            Text("合价").frame(width: ColW.amount, alignment: .trailing)
+            Text("").frame(width: ColW.ops)
+        }
+        .font(.caption2).foregroundColor(.secondary)
+        .padding(.bottom, 2)
+    }
+
+    /// 组头行（全宽色带 + 项数 + 添加按钮）；空组不显示（添加走面板头「添加关联」菜单）。
+    private func groupBand(_ title: String, count: Int,
+                           add: @escaping () -> Void) -> some View {
+        HStack(spacing: 6) {
+            Text("【\(title)】").font(.subheadline).fontWeight(.bold)
+            Text("\(count) 项").font(.caption).foregroundColor(.secondary)
+            Spacer()
+            Button { add() } label: { Image(systemName: "plus.circle") }
+                .buttonStyle(.borderless)
+                .help("添加\(title)关联")
+        }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 6)
+        .background(Theme.accent.opacity(0.08))
+        .cornerRadius(4)
+    }
+
+    private func materialLine(_ link: EffectiveMaterialLink) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 8) {
+                Text("—").foregroundColor(.secondary)
+                    .frame(width: ColW.code, alignment: .leading)
+                HStack(spacing: 6) {
+                    Text(link.rule.material).fontWeight(.semibold).lineLimit(1)
+                    kindBadge(link.rule.kind)
+                    if link.materialIndex == nil {
+                        badge("未建档", color: .orange)
+                    }
                 }
-                kindBadge(link.rule.kind)
-                if link.materialIndex == nil {
-                    badge("未建档", color: .orange)
+                .frame(minWidth: 160, maxWidth: .infinity, alignment: .leading)
+                Text(link.rule.spec.isEmpty ? "—" : link.rule.spec)
+                    .foregroundColor(.secondary).lineLimit(1)
+                    .frame(width: ColW.spec, alignment: .leading)
+                Text(link.unit).foregroundColor(.secondary)
+                    .frame(width: ColW.unit, alignment: .leading)
+                DoubleField(label: "", value: consumptionBinding(link))
+                    .frame(width: ColW.per)
+                Text(num2(link.totalQty)).monospacedDigit()
+                    .frame(width: ColW.total, alignment: .trailing)
+                Group {
+                    if link.materialIndex != nil {
+                        DoubleField(label: "", value: priceBinding(link))
+                    } else {
+                        Text("—").foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
                 }
-                Spacer()
+                .frame(width: ColW.price)
+                Text(money(link.amount)).monospacedDigit()
+                    .frame(width: ColW.amount, alignment: .trailing)
                 deleteButton { pendingDelete = .rule(index: link.ruleIndex,
                                                       label: link.rule.material) }
+                    .frame(width: ColW.ops)
             }
-            HStack(spacing: 6) {
-                Text("消耗").foregroundColor(.secondary)
-                DoubleField(label: "", value: consumptionBinding(link))
-                    .frame(width: 62)
-                Text(link.unit).foregroundColor(.secondary)
-                Text("合计 \(num2(link.totalQty))").monospacedDigit()
-                Spacer()
-                if link.rule.kind == "备选" { altToggle(link) }
-            }
-            HStack(spacing: 6) {
-                Text("单价").foregroundColor(.secondary)
-                if link.materialIndex != nil {
-                    DoubleField(label: "", value: priceBinding(link))
-                        .frame(width: 74)
-                    Text("合价 \(money(link.amount))").monospacedDigit()
-                } else {
-                    TextField("单价", text: archiveBinding(link.ruleIndex))
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 74)
-                    Button("建档") { archiveMaterial(link) }
-                        .controlSize(.small)
-                    Text("未建档不计价").foregroundColor(.secondary)
+            if link.rule.kind == "备选" || link.materialIndex == nil || link.inactiveReason != nil {
+                HStack(spacing: 8) {
+                    Text("").frame(width: ColW.code)
+                    if link.materialIndex == nil {
+                        Text("未建档不计价，建档单价").foregroundColor(.secondary)
+                        TextField("单价", text: archiveBinding(link.ruleIndex))
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 74)
+                        Button("建档") { archiveMaterial(link) }
+                            .controlSize(.small)
+                    }
+                    if link.rule.kind == "备选" { altToggle(link) }
+                    if let reason = link.inactiveReason {
+                        Text(reason).foregroundColor(.orange)
+                    }
+                    Spacer()
                 }
-                Spacer()
-            }
-            if let reason = link.inactiveReason {
-                Text(reason).foregroundColor(.orange)
             }
         }
         .font(.caption)
         .padding(.vertical, 3)
         .opacity(link.isEffective ? 1 : 0.55)
+    }
+
+    private func equipLine(_ link: EffectiveEquipLink, isMachine: Bool) -> some View {
+        HStack(spacing: 8) {
+            Text(link.mcode.isEmpty ? "—" : link.mcode).monospacedDigit()
+                .frame(width: ColW.code, alignment: .leading)
+            Text(link.mname).fontWeight(.semibold).lineLimit(1)
+                .frame(minWidth: 160, maxWidth: .infinity, alignment: .leading)
+            Text("—").foregroundColor(.secondary)
+                .frame(width: ColW.spec, alignment: .leading)
+            Text(link.unit).foregroundColor(.secondary)
+                .frame(width: ColW.unit, alignment: .leading)
+            DoubleField(label: "", value: equipQtyBinding(link, isMachine: isMachine))
+                .frame(width: ColW.per)
+            Text(num2(link.totalQty)).monospacedDigit()
+                .frame(width: ColW.total, alignment: .trailing)
+            Group {
+                if let price = link.price {
+                    Text(money(price)).monospacedDigit()
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                } else {
+                    Text("无价").foregroundColor(.orange)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .help("价目库无此价，按 0 计")
+                }
+            }
+            .frame(width: ColW.price)
+            Text(money(link.amount)).monospacedDigit()
+                .frame(width: ColW.amount, alignment: .trailing)
+            deleteButton {
+                pendingDelete = isMachine
+                    ? .machine(index: link.linkIndex, label: link.mname)
+                    : .instrument(index: link.linkIndex, label: link.mname)
+            }
+            .frame(width: ColW.ops)
+        }
+        .font(.caption)
+        .padding(.vertical, 3)
     }
 
     private func altToggle(_ link: EffectiveMaterialLink) -> some View {
@@ -195,77 +310,7 @@ struct WorkloadLinksPanel: View {
         }
     }
 
-    // MARK: - 机械 / 仪表组
-
-    private func equipColumn(title: String, links list: [EffectiveEquipLink],
-                             isMachine: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            groupHeader(title, count: list.count) { addKind = isMachine ? .machine : .instrument }
-            if list.isEmpty {
-                Text("无\(title)关联，点 ＋ 从价目库添加。").font(.caption).foregroundColor(.secondary)
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 2) {
-                        ForEach(list, id: \.linkIndex) { link in
-                            equipRow(link, isMachine: isMachine)
-                            Divider()
-                        }
-                    }
-                }
-            }
-        }
-        .frame(minWidth: 250, maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func equipRow(_ link: EffectiveEquipLink, isMachine: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 6) {
-                Text(link.mname).fontWeight(.semibold).lineLimit(1)
-                if !link.mcode.isEmpty {
-                    Text(link.mcode).foregroundColor(.secondary)
-                }
-                Spacer()
-                deleteButton {
-                    pendingDelete = isMachine
-                        ? .machine(index: link.linkIndex, label: link.mname)
-                        : .instrument(index: link.linkIndex, label: link.mname)
-                }
-            }
-            HStack(spacing: 6) {
-                Text("消耗").foregroundColor(.secondary)
-                DoubleField(label: "", value: equipQtyBinding(link, isMachine: isMachine))
-                    .frame(width: 62)
-                Text(link.unit).foregroundColor(.secondary)
-                Text("台班 \(num2(link.totalQty))").monospacedDigit()
-                Spacer()
-            }
-            HStack(spacing: 6) {
-                Text("单价").foregroundColor(.secondary)
-                if let price = link.price {
-                    Text(money(price)).monospacedDigit()
-                } else {
-                    Text("价目库无此价（按 0 计）").foregroundColor(.orange)
-                }
-                Text("合价 \(money(link.amount))").monospacedDigit()
-                Spacer()
-            }
-        }
-        .font(.caption)
-        .padding(.vertical, 3)
-    }
-
     // MARK: - 通用小件
-
-    private func groupHeader(_ title: String, count: Int,
-                             add: @escaping () -> Void) -> some View {
-        HStack(spacing: 6) {
-            Text("\(title)（\(count)）").font(.subheadline).fontWeight(.bold)
-            Spacer()
-            Button { add() } label: { Image(systemName: "plus.circle") }
-                .buttonStyle(.borderless)
-                .help("添加\(title)关联")
-        }
-    }
 
     private func kindBadge(_ kind: String) -> some View {
         Text(kind)

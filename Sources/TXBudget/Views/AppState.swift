@@ -16,6 +16,11 @@ final class AppState: ObservableObject {
     @Published var exportSelection: [String]
     /// 本次运行的导出记录（内存态，不落盘）：报表导出页展示，重启清空。
     @Published var exportHistory: [ExportRecord] = []
+    /// 资料库维护请求（v2.5.0 §12.5）：菜单栏与资料库页按钮共同置位，
+    /// 由 ContentView 根部常驻的 LibraryMaintenanceControls 单点呈现确认/预览。
+    @Published var libraryMaintenanceRequest: LibraryMaintenanceAction?
+    /// 设置页聚焦令牌（v2.5.0）：菜单「工程信息模板…」递增之，设置页据此高亮模板卡片。
+    @Published var settingsFocusToken = 0
 
     private let dataURL: URL
     private var autosaveTask: Task<Void, Never>?
@@ -277,6 +282,42 @@ final class AppState: ObservableObject {
         updateDb { d in d.settings.exportSelection = selection }
     }
 
+    /// 复制当前资料库方案（菜单栏「方案」用；逻辑复用 Logic 的 duplicateProfile）。
+    func duplicateEditingProfile() {
+        guard let profile = editingProfile else { return }
+        let copy = duplicateProfile(profile)
+        addProfile(copy)
+        showToast("已复制方案为“\(copy.name)”")
+    }
+
+    /// 导入方案文件（原生文件面板；设置页与菜单栏共用同一实现，v2.5.0 收敛）。
+    func importProfileViaPanel() {
+        guard let url = FilePanel.openFile(allowedTypes: ["json"]) else { return }
+        do {
+            let data = try Data(contentsOf: url)
+            var profile = try DatabaseStore.importProfileData(data)
+            let names = Set(db.configurationProfiles.map { $0.name })
+            if names.contains(profile.name) { profile.name = "\(profile.name)（导入）" }
+            addProfile(profile)
+            showToast("已导入配置方案“\(profile.name)”")
+        } catch {
+            showToast("导入失败：\(error.localizedDescription)")
+        }
+    }
+
+    /// 导出当前资料库方案（原生文件面板；设置页与菜单栏共用同一实现，v2.5.0 收敛）。
+    func exportEditingProfileViaPanel() {
+        guard let profile = editingProfile else { return }
+        guard let url = FilePanel.saveFile(defaultName: "\(profile.name).json", allowedTypes: ["json"]) else { return }
+        do {
+            let data = try DatabaseStore.exportProfileData(profile)
+            try data.write(to: url)
+            showToast("已导出：\(url.path)")
+        } catch {
+            showToast("导出失败：\(error.localizedDescription)")
+        }
+    }
+
     /// 批量导出：逐个工程计算并写盘，单个失败记录后继续（不中断其余工程）。
     /// 文件名 `<工程名>_概预算.xlsx`（batchExportFileName），勾选表 = 当前导出勾选。
     /// 返回 (成功数, 失败列表[(工程名, 原因)])，调用方负责提示。
@@ -298,6 +339,12 @@ final class AppState: ObservableObject {
         }
         return (ok, failures)
     }
+}
+
+/// 资料库维护动作（v2.5.0）：补全并校正 / 按官方清理，作用于当前资料库方案。
+enum LibraryMaintenanceAction: Equatable {
+    case completion
+    case cleanup
 }
 
 /// 一次导出记录（内存态）：时间 + 工程名 + 文件名。

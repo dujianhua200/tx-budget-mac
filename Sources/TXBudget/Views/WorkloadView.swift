@@ -9,6 +9,8 @@ struct WorkloadView: View {
     var project: ProjectRecord
     @State private var page = "3a"
     @State private var selectedRowKey: String?
+    @State private var showVariantPicker = false
+    @State private var variantTarget: QuantityRow?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -35,32 +37,51 @@ struct WorkloadView: View {
     private var pageContent: some View {
         switch page {
         case "3a":
-            VSplitView {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("表三甲 · 工程量清单（\(project.quantities.count) 行）")
-                        .font(.headline)
-                    ProTable(
-                        columns: quantityColumns,
-                        rows: quantityDicts,
-                        onCommit: commitQuantity,
-                        onDelete: { ids in
-                            appState.updateProject(project.id) { p in
-                                p.quantities.removeAll { $0.id.map { ids.contains($0) } ?? false }
-                            }
-                        },
-                        onSelectionChange: { ids in
-                            selectedRowKey = ids.count == 1 ? ids.first : nil
-                        },
-                        readOnlyKeys: ["quota", "variant", "unit", "status"],
-                        totalsKeys: [],
-                        emptyTitle: "尚未录入工程量",
-                        emptyMessage: "在上方搜索定额编号或名称，输数量后回车添加第一行。",
-                        columnWidths: ["quota": 104, "variant": 200, "unit": 52, "status": 92]
-                    )
+            VStack(alignment: .leading, spacing: 6) {
+                VSplitView {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("表三甲 · 工程量清单（\(project.quantities.count) 行）")
+                            .font(.headline)
+                        ProTable(
+                            columns: quantityColumns,
+                            rows: quantityDicts,
+                            onCommit: commitQuantity,
+                            onDelete: { ids in
+                                appState.updateProject(project.id) { p in
+                                    p.quantities.removeAll { $0.id.map { ids.contains($0) } ?? false }
+                                }
+                            },
+                            onSelectionChange: { ids in
+                                selectedRowKey = ids.count == 1 ? ids.first : nil
+                            },
+                            onRowDoubleClick: handleRowDoubleClick,
+                            tableId: "workload-3a",
+                            flexibleKey: "variant",
+                            flexibleMinWidth: 260,
+                            readOnlyKeys: ["quota", "variant", "unit", "tech", "labor",
+                                           "techTotal", "laborTotal", "status"],
+                            totalsKeys: [],
+                            emptyTitle: "尚未录入工程量",
+                            emptyMessage: "在上方搜索定额编号或名称，输数量后回车添加第一行。",
+                            columnWidths: ["quota": 92, "variant": 260, "unit": 56, "qty": 84,
+                                           "coef": 64, "tech": 64, "labor": 64,
+                                           "techTotal": 88, "laborTotal": 88, "status": 92]
+                        )
+                    }
+                    .frame(minHeight: 180)
+                    WorkloadLinksPanel(project: project, selectedRow: selectedQuantityRow)
+                        .frame(minHeight: 200, idealHeight: 260)
                 }
-                .frame(minHeight: 180)
-                WorkloadLinksPanel(project: project, selectedRow: selectedQuantityRow)
-                    .frame(minHeight: 200, idealHeight: 260)
+                table3ASummaryBar
+            }
+            .sheet(isPresented: $showVariantPicker) {
+                if let target = variantTarget {
+                    VariantPickerSheet(quota: target.quota,
+                                       options: variantPickerOptions,
+                                       current: target.variant ?? "") { picked in
+                        switchVariant(of: target, to: picked)
+                    }
+                }
             }
         case "3b":
             VStack(alignment: .leading, spacing: 6) {
@@ -85,6 +106,62 @@ struct WorkloadView: View {
     private func generatedNote(_ text: String) -> some View {
         Text("自动生成，只读。\(text)")
             .font(.caption).foregroundColor(.secondary)
+    }
+
+    // MARK: - 表三甲汇总条（v2.5.0 §12.1：数字一律取引擎结果）
+
+    private var table3ASummaryBar: some View {
+        HStack(spacing: 20) {
+            Text("汇总").fontWeight(.bold)
+            Text("总技工合计 \(num2(result?.techSub)) 工日").monospacedDigit()
+            Text("总普工合计 \(num2(result?.laborSub)) 工日").monospacedDigit()
+            if let r = result, r.adjRate != 0 {
+                Text("含工日调整 +\(jsNumberString(r.adjRate * 100))%：调整后 技 \(num2(r.techDays)) / 普 \(num2(r.laborDays)) 工日（与导出表三甲合计行一致）")
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+        }
+        .font(.callout)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .cornerRadius(6)
+    }
+
+    // MARK: - 双击选型号（v2.5.0 §12.4）
+
+    /// 本次弹出的型号清单：Logic 清单 + 当前行变体（不在清单内时追加，保证当前状态可见）。
+    private var variantPickerOptions: [String] {
+        guard let target = variantTarget else { return [] }
+        var options = variantOptions(quota: target.quota, libraries: libraries)
+        let current = target.variant ?? ""
+        if !current.isEmpty && !options.contains(current) { options.append(current) }
+        return options
+    }
+
+    private func handleRowDoubleClick(_ dictId: String) {
+        guard let row = project.quantities.enumerated()
+            .first(where: { quantityDictId($0.element, at: $0.offset) == dictId })?.element
+        else { return }
+        selectedRowKey = dictId
+        var options = variantOptions(quota: row.quota, libraries: libraries)
+        let current = row.variant ?? ""
+        if !current.isEmpty && !options.contains(current) { options.append(current) }
+        guard options.count >= 2 else {
+            appState.showToast("该定额无可选型号")
+            return
+        }
+        variantTarget = row
+        showVariantPicker = true
+    }
+
+    private func switchVariant(of row: QuantityRow, to picked: String) {
+        guard let id = row.id, (row.variant ?? "") != picked else { return }
+        appState.updateProject(project.id) { p in
+            guard let i = p.quantities.firstIndex(where: { $0.id == id }) else { return }
+            p.quantities[i].variant = picked
+        }
+        appState.showToast("已切换型号：\(picked)")
     }
 
     /// 当前在清单中单选的工程量行（按清单字典 id 解析，含无 id 行的行序回退 id）。
@@ -185,6 +262,10 @@ struct WorkloadView: View {
             LibraryColumn(key: "unit", label: "单位", kind: .text),
             LibraryColumn(key: "qty", label: "数量", kind: .number),
             LibraryColumn(key: "coef", label: "系数", kind: .number),
+            LibraryColumn(key: "tech", label: "技工", kind: .number),
+            LibraryColumn(key: "labor", label: "普工", kind: .number),
+            LibraryColumn(key: "techTotal", label: "技工合计", kind: .number),
+            LibraryColumn(key: "laborTotal", label: "普工合计", kind: .number),
             LibraryColumn(key: "status", label: "状态", kind: .text),
         ]
     }
@@ -193,6 +274,8 @@ struct WorkloadView: View {
         project.quantities.enumerated().map { i, row in
             let status = quantityRowStatus(row, orphanIds: orphanIds, invalidIds: invalidIds,
                                            duplicateCodes: duplicateCodes)
+            let quota = firstQuota(code: row.quota, libraries: libraries)
+            let contribution = table3ARowContribution(row: row, libraries: libraries)
             return [
                 "id": quantityDictId(row, at: i),
                 "quota": row.quota,
@@ -200,6 +283,10 @@ struct WorkloadView: View {
                 "unit": row.unit ?? "",
                 "qty": row.qty.map { jsNumberString($0) } ?? "",
                 "coef": row.coef.map { jsNumberString($0) } ?? "",
+                "tech": quota.map { num2($0.tech) } ?? "",
+                "labor": quota.map { num2($0.labor) } ?? "",
+                "techTotal": quota == nil ? "" : num2(contribution.tech),
+                "laborTotal": quota == nil ? "" : num2(contribution.labor),
                 "status": quantityRowStatusText(status),
             ]
         }
@@ -271,7 +358,7 @@ struct QuotaAddBar: View {
             Button("添加") { doAdd() }
                 .buttonStyle(.borderedProminent)
                 .disabled(picked == nil)
-            Text("选定额 → 输数量 → 回车添加；表内双击数量/系数可改。")
+            Text("选定额 → 输数量 → 回车添加；双击数量/系数可改，双击行可选型号。")
                 .foregroundColor(.secondary).font(.caption)
             Spacer()
         }
@@ -389,6 +476,43 @@ struct QuotaPickerSheet: View {
         appState.nav = .workload
         appState.showToast("已加入工程量：\(picked.code) × \(jsNumberString(qty))")
         dismiss()
+    }
+}
+/// 双击选型号（v2.5.0 §12.4）：仿宇翔“请选择”列表——变体全名列项、当前打勾、点选即切换。
+struct VariantPickerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    var quota: String
+    var options: [String]
+    var current: String
+    var onPick: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("请选择型号").font(.title3).fontWeight(.bold)
+            Text("定额 \(quota)：切换型号只改本行项目名称，工程量与系数不变；主材规格与用量随型号重算。")
+                .font(.caption).foregroundColor(.secondary)
+            List(options, id: \.self) { option in
+                Button {
+                    onPick(option)
+                    dismiss()
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(option)
+                        Spacer()
+                        if option == current {
+                            Image(systemName: "checkmark").foregroundColor(Theme.accent)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(width: 460, height: min(CGFloat(options.count) * 30 + 16, 420))
+            HStack {
+                Spacer()
+                Button("取消") { dismiss() }
+            }
+        }
+        .padding(20)
     }
 }
 #endif
