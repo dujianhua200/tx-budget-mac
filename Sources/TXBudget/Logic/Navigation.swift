@@ -68,24 +68,18 @@ public enum LibraryViewKey: String, Equatable, Hashable, CaseIterable {
     case quotas
     case shortlist
     case materials
-    case rulesVariant
     case rulesAlt
     case machinePrices
     case instrumentPrices
-    case quotaMachines
-    case quotaInstruments
 
     public var label: String {
         switch self {
         case .quotas: return "定额库"
         case .shortlist: return "常用短单"
         case .materials: return "材料库"
-        case .rulesVariant: return "定额—材料映射"
         case .rulesAlt: return "关联规则（备选）"
         case .machinePrices: return "机械库"
         case .instrumentPrices: return "仪器仪表库"
-        case .quotaMachines: return "定额—机械映射"
-        case .quotaInstruments: return "定额—仪表映射"
         }
     }
 
@@ -94,12 +88,9 @@ public enum LibraryViewKey: String, Equatable, Hashable, CaseIterable {
         case .quotas: return "book.closed"
         case .shortlist: return "star"
         case .materials: return "shippingbox"
-        case .rulesVariant: return "link"
         case .rulesAlt: return "arrow.triangle.branch"
         case .machinePrices: return "truck.box"
         case .instrumentPrices: return "gauge"
-        case .quotaMachines: return "wrench.and.screwdriver"
-        case .quotaInstruments: return "waveform.path.ecg"
         }
     }
 }
@@ -132,7 +123,7 @@ public enum FeeRuleTab: String, Equatable, Hashable, CaseIterable {
 /// 底栏操作提示（随页面变化）。
 public func statusHintFor(_ nav: NavDestination) -> String {
     switch nav {
-    case .projectList: return "点工程卡片打开工程；列表模式可多选批量导出/删除"
+    case .projectList: return "点工程名打开工程；可多选批量导出/删除"
     case .overview: return "概览：关键数字、费用构成与数据问题一览"
     case .projectInfo: return "填写工程信息；取费标准切换即切换工程所用配置方案"
     case .workload: return "录工程量一处即可：输定额编号/名称搜索，输数量回车添加；右侧自动生成表三/表四"

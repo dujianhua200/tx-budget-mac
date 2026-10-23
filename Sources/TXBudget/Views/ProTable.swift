@@ -22,6 +22,12 @@ struct ProTable: View {
     /// 行双击回调（v2.5.0，docs/v2-ui-design.md §12.4）：仅非编辑列的双击触发
     /// （可编辑列双击仍进编辑）；默认 nil，其他使用方不受影响。
     var onRowDoubleClick: ((String) -> Void)? = nil
+    /// 行上移/下移回调（v2.6.0 §9）：(行 id, 方向 -1 上移 / +1 下移)，右键菜单呈现；
+    /// 默认 nil，其他使用方不受影响。数据顺序的交换与边界判定在回调方（Logic 纯函数）。
+    var onMoveRow: ((String, Int) -> Void)? = nil
+    /// “切换型号…”回调（v2.6.0 §6）：右键菜单呈现（双击名称列已改为进编辑，
+    /// 选型号改走右键）；默认 nil，其他使用方不受影响。
+    var onVariantPick: ((String) -> Void)? = nil
     /// 表格标识（v2.5.0 §12.2）：非空才启用列宽拖动改宽 + UserDefaults 持久化；
     /// nil 时列宽行为与旧版完全一致。
     var tableId: String? = nil
@@ -432,6 +438,16 @@ struct ProTable: View {
                     selection = [wrap.id]
                     editing = EditingCell(rowId: wrap.id, key: key)
                 }
+            }
+            if let onVariantPick {
+                Button("切换型号…") {
+                    selection = [wrap.id]
+                    onVariantPick(wrap.id)
+                }
+            }
+            if let onMoveRow {
+                Button("上移") { onMoveRow(wrap.id, -1) }
+                Button("下移") { onMoveRow(wrap.id, 1) }
             }
             if let onDuplicate {
                 Button("复制行") { onDuplicate(wrap.id) }

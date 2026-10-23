@@ -107,7 +107,11 @@ final class PersistenceTests: XCTestCase {
         let url = dir.appendingPathComponent("budget-data.json")
         try DatabaseStore.save(db, to: url)
         let loaded = try DatabaseStore.load(from: url)
-        XCTAssertEqual(loaded, db)
+        // v2.6.0：load 走 repair 会给旧格式文件打上一次性迁移标记
+        // （meta.appliedMigrations），除此之外往返逐项一致。
+        var expected = db
+        _ = migrateCableMaterialUnits(&expected)
+        XCTAssertEqual(loaded, expected)
         // 无 tmp 残留。
         let files = try FileManager.default.contentsOfDirectory(atPath: dir.path)
         XCTAssertFalse(files.contains { $0.hasSuffix(".tmp") })

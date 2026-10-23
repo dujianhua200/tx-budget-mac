@@ -88,7 +88,7 @@ struct WorkloadLinksPanel: View {
                     .fixedSize()
                 }
             }
-            Text("这里改的是当前方案「\(profile?.name ?? "—")」库的关联，对使用该方案的全部工程生效；只改本工程请用表四材料页的工程级修正（手动调整 / 本工程单价）。")
+            Text("这里改的是当前方案「\(profile?.name ?? "—")」库的关联，对使用该方案的全部工程生效；只改本工程的数量、单价、名称等请去表四材料页，在本工程材料表里直接改。")
                 .font(.caption).foregroundColor(.orange)
         }
     }
@@ -123,7 +123,7 @@ struct WorkloadLinksPanel: View {
 
     private func linksList(_ links: WorkloadRowLinks) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 0) {
                 linksColumnHeader
                 if !links.materials.isEmpty {
                     groupBand("主材", count: links.materials.count) { addKind = .material }
@@ -152,23 +152,45 @@ struct WorkloadLinksPanel: View {
                         .padding(.vertical, 4)
                 }
             }
+            // 框线表格视觉（v2.6.0 §2）：整表外框 + 内部横线（Divider/组头色带）+ 列间竖线。
+            .background(Color(nsColor: .textBackgroundColor))
+            .overlay(RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.primary.opacity(0.15), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
         }
     }
 
+    /// 列间竖向框线（固定列宽 + 同宽弹性名称列保证跨行对齐）。
+    private var vRule: some View {
+        Rectangle().fill(Color.primary.opacity(0.10)).frame(width: 1)
+    }
+
     private var linksColumnHeader: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Text("代号").frame(width: ColW.code, alignment: .leading)
+            vRule
             Text("名称").frame(minWidth: 160, maxWidth: .infinity, alignment: .leading)
+            vRule
             Text("规格").frame(width: ColW.spec, alignment: .leading)
+            vRule
             Text("单位").frame(width: ColW.unit, alignment: .leading)
+            vRule
             Text("单位用量").frame(width: ColW.per, alignment: .trailing)
-            Text("参考用量").frame(width: ColW.total, alignment: .trailing)
+            vRule
+            Text("合计用量").frame(width: ColW.total, alignment: .trailing)
+            vRule
             Text("单价").frame(width: ColW.price, alignment: .trailing)
+            vRule
             Text("合价").frame(width: ColW.amount, alignment: .trailing)
             Text("").frame(width: ColW.ops)
         }
         .font(.caption2).foregroundColor(.secondary)
-        .padding(.bottom, 2)
+        .padding(.vertical, 4)
+        .padding(.horizontal, 6)
+        .background(Theme.accent.opacity(0.06))
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Color.primary.opacity(0.15)).frame(height: 1)
+        }
     }
 
     /// 组头行（全宽色带 + 项数 + 添加按钮）；空组不显示（添加走面板头「添加关联」菜单）。
@@ -190,9 +212,10 @@ struct WorkloadLinksPanel: View {
 
     private func materialLine(_ link: EffectiveMaterialLink) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Text("—").foregroundColor(.secondary)
                     .frame(width: ColW.code, alignment: .leading)
+                vRule
                 HStack(spacing: 6) {
                     Text(link.rule.material).fontWeight(.semibold).lineLimit(1)
                     kindBadge(link.rule.kind)
@@ -201,24 +224,32 @@ struct WorkloadLinksPanel: View {
                     }
                 }
                 .frame(minWidth: 160, maxWidth: .infinity, alignment: .leading)
+                vRule
                 Text(link.rule.spec.isEmpty ? "—" : link.rule.spec)
                     .foregroundColor(.secondary).lineLimit(1)
                     .frame(width: ColW.spec, alignment: .leading)
+                vRule
                 Text(link.unit).foregroundColor(.secondary)
                     .frame(width: ColW.unit, alignment: .leading)
+                vRule
                 DoubleField(label: "", value: consumptionBinding(link))
+                    .textFieldStyle(.roundedBorder)
                     .frame(width: ColW.per)
+                vRule
                 Text(num2(link.totalQty)).monospacedDigit()
                     .frame(width: ColW.total, alignment: .trailing)
+                vRule
                 Group {
                     if link.materialIndex != nil {
                         DoubleField(label: "", value: priceBinding(link))
+                            .textFieldStyle(.roundedBorder)
                     } else {
                         Text("—").foregroundColor(.secondary)
                             .frame(maxWidth: .infinity, alignment: .trailing)
                     }
                 }
                 .frame(width: ColW.price)
+                vRule
                 Text(money(link.amount)).monospacedDigit()
                     .frame(width: ColW.amount, alignment: .trailing)
                 deleteButton { pendingDelete = .rule(index: link.ruleIndex,
@@ -246,23 +277,31 @@ struct WorkloadLinksPanel: View {
         }
         .font(.caption)
         .padding(.vertical, 3)
+        .padding(.horizontal, 6)
         .opacity(link.isEffective ? 1 : 0.55)
     }
 
     private func equipLine(_ link: EffectiveEquipLink, isMachine: Bool) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Text(link.mcode.isEmpty ? "—" : link.mcode).monospacedDigit()
                 .frame(width: ColW.code, alignment: .leading)
+            vRule
             Text(link.mname).fontWeight(.semibold).lineLimit(1)
                 .frame(minWidth: 160, maxWidth: .infinity, alignment: .leading)
+            vRule
             Text("—").foregroundColor(.secondary)
                 .frame(width: ColW.spec, alignment: .leading)
+            vRule
             Text(link.unit).foregroundColor(.secondary)
                 .frame(width: ColW.unit, alignment: .leading)
+            vRule
             DoubleField(label: "", value: equipQtyBinding(link, isMachine: isMachine))
+                .textFieldStyle(.roundedBorder)
                 .frame(width: ColW.per)
+            vRule
             Text(num2(link.totalQty)).monospacedDigit()
                 .frame(width: ColW.total, alignment: .trailing)
+            vRule
             Group {
                 if let price = link.price {
                     Text(money(price)).monospacedDigit()
@@ -274,6 +313,7 @@ struct WorkloadLinksPanel: View {
                 }
             }
             .frame(width: ColW.price)
+            vRule
             Text(money(link.amount)).monospacedDigit()
                 .frame(width: ColW.amount, alignment: .trailing)
             deleteButton {
@@ -285,6 +325,7 @@ struct WorkloadLinksPanel: View {
         }
         .font(.caption)
         .padding(.vertical, 3)
+        .padding(.horizontal, 6)
     }
 
     private func altToggle(_ link: EffectiveMaterialLink) -> some View {

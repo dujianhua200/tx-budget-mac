@@ -35,6 +35,19 @@ jobs:
         run: |
           codesign -dv "build/滑洲智算.app"
           test -d "build/滑洲智算.app/Contents/_CodeSignature"
+      - name: Verify DMG contents (full-library.json 双保险断言, v2.5.1)
+        run: |
+          set -euo pipefail
+          DMG="$(ls build/*.dmg | head -n 1)"
+          MOUNT="$(mktemp -d)"
+          hdiutil attach "$DMG" -mountpoint "$MOUNT" -nobrowse -quiet
+          APP="$(ls -d "$MOUNT"/*.app | head -n 1)"
+          test -f "$APP/Contents/Resources/full-library.json"
+          test -f "$APP/Contents/Resources/TXBudget_TXBudget.bundle/full-library.json"
+          echo "DMG 内容断言通过（两处 full-library.json 均存在）："
+          ls -la "$APP/Contents/Resources/full-library.json" \
+                 "$APP/Contents/Resources/TXBudget_TXBudget.bundle/full-library.json"
+          hdiutil detach "$MOUNT" -quiet
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:

@@ -80,7 +80,7 @@ public struct MaterialRow: Equatable, Codable {
         remark = c.decodeLenientString(forKey: .remark)
     }
     public func toEngine() -> Material {
-        Material(name: name, spec: spec, unit: unit, priceExcl: priceExcl, supply: supply)
+        Material(name: name, spec: spec, unit: unit, priceExcl: priceExcl, supply: supply, remark: remark)
     }
 }
 

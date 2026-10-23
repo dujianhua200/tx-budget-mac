@@ -1,7 +1,9 @@
 import Foundation
 
 /// 库表行 ↔ 字典编解码（供通用字典表格 DictTableView 使用）。
-/// 列定义对照 Electron `libraryDefs.js`；rules 一张存储表拆为两视图（rulesVariant / rulesAlt，按 kind 切片）。
+/// 列定义对照 Electron `libraryDefs.js`；rules 表在资料库仅保留“关联规则（备选）”视图
+/// （v2.6.0 起定额—材料/机械/仪表关联的维护入口收敛到表三甲底部关联区，
+/// 见 docs/v2.6-batch-design.md §8）。
 
 public struct LibraryRowCodec {
     public static func columns(for key: LibraryViewKey) -> [LibraryColumn] {
@@ -33,8 +35,7 @@ public struct LibraryRowCodec {
                 LibraryColumn(key: "supply", label: "供货", kind: .select, options: ["甲供", "乙供", "设备"]),
                 LibraryColumn(key: "remark", label: "备注", kind: .text),
             ]
-        case .rulesVariant, .rulesAlt:
-            let kindOpts = key == .rulesAlt ? ["备选"] : ["变体", "变体*", "通用"]
+        case .rulesAlt:
             return [
                 LibraryColumn(key: "quota", label: "定额编号", kind: .text),
                 LibraryColumn(key: "material", label: "材料", kind: .text),
@@ -42,7 +43,7 @@ public struct LibraryRowCodec {
                 LibraryColumn(key: "unit", label: "单位", kind: .text),
                 LibraryColumn(key: "consumption", label: "单位消耗量", kind: .number),
                 LibraryColumn(key: "supply", label: "供货", kind: .select, options: ["甲供", "乙供", "设备"]),
-                LibraryColumn(key: "kind", label: "类型", kind: .select, options: kindOpts),
+                LibraryColumn(key: "kind", label: "类型", kind: .select, options: ["备选"]),
                 LibraryColumn(key: "variant", label: "变体项目名称", kind: .text),
                 LibraryColumn(key: "remark", label: "备注", kind: .text),
                 LibraryColumn(key: "appliesTo", label: "适用工程", kind: .text),
@@ -60,22 +61,6 @@ public struct LibraryRowCodec {
                 LibraryColumn(key: "name", label: "仪表名称", kind: .text),
                 LibraryColumn(key: "unit", label: "单位", kind: .text),
                 LibraryColumn(key: "price", label: "台班单价", kind: .number),
-            ]
-        case .quotaMachines:
-            return [
-                LibraryColumn(key: "quota", label: "定额编号", kind: .text),
-                LibraryColumn(key: "mcode", label: "机械编号", kind: .text),
-                LibraryColumn(key: "mname", label: "机械名称", kind: .text),
-                LibraryColumn(key: "unit", label: "单位", kind: .text),
-                LibraryColumn(key: "qty", label: "数量(台班)", kind: .number),
-            ]
-        case .quotaInstruments:
-            return [
-                LibraryColumn(key: "quota", label: "定额编号", kind: .text),
-                LibraryColumn(key: "mcode", label: "仪表编号", kind: .text),
-                LibraryColumn(key: "mname", label: "仪表名称", kind: .text),
-                LibraryColumn(key: "unit", label: "单位", kind: .text),
-                LibraryColumn(key: "qty", label: "数量(台班)", kind: .number),
             ]
         }
     }
@@ -113,8 +98,6 @@ public struct LibraryRowCodec {
                 ["id": r.id, "name": r.name, "spec": r.spec, "unit": r.unit,
                  "priceExcl": jsNumberString(r.priceExcl), "supply": r.supply, "remark": r.remark]
             }
-        case .rulesVariant:
-            return libs.rules.filter { ["变体", "变体*", "通用"].contains($0.kind) }.map { ruleDict($0) }
         case .rulesAlt:
             return libs.rules.filter { $0.kind == "备选" }.map { ruleDict($0) }
         case .machinePrices:
@@ -124,16 +107,6 @@ public struct LibraryRowCodec {
         case .instrumentPrices:
             return libs.instrumentPrices.map { r in
                 ["id": r.id, "code": r.code, "name": r.name, "unit": r.unit, "price": jsNumberString(r.price)]
-            }
-        case .quotaMachines:
-            return libs.quotaMachines.map { r in
-                ["id": r.id, "quota": r.quota, "mcode": r.mcode, "mname": r.mname,
-                 "unit": r.unit, "qty": jsNumberString(r.qty)]
-            }
-        case .quotaInstruments:
-            return libs.quotaInstruments.map { r in
-                ["id": r.id, "quota": r.quota, "mcode": r.mcode, "mname": r.mname,
-                 "unit": r.unit, "qty": jsNumberString(r.qty)]
             }
         }
     }
@@ -185,7 +158,7 @@ public struct LibraryRowCodec {
                             unit: dict["unit"] ?? "", priceExcl: num(dict["priceExcl"]),
                             supply: dict["supply"] ?? "", remark: dict["remark"] ?? "")
             }
-        case .rulesVariant, .rulesAlt:
+        case .rulesAlt:
             upsert(&profile.libraries.rules, id: id) {
                 RuleRow(id: id, quota: dict["quota"] ?? "", material: dict["material"] ?? "",
                         spec: dict["spec"] ?? "", unit: dict["unit"] ?? "",
@@ -202,16 +175,6 @@ public struct LibraryRowCodec {
             upsert(&profile.libraries.instrumentPrices, id: id) {
                 InstrumentPriceRow(id: id, code: dict["code"] ?? "", name: dict["name"] ?? "",
                                    unit: dict["unit"] ?? "", price: num(dict["price"]))
-            }
-        case .quotaMachines:
-            upsert(&profile.libraries.quotaMachines, id: id) {
-                QuotaMachineRow(id: id, quota: dict["quota"] ?? "", mcode: dict["mcode"] ?? "",
-                                mname: dict["mname"] ?? "", unit: dict["unit"] ?? "", qty: num(dict["qty"]))
-            }
-        case .quotaInstruments:
-            upsert(&profile.libraries.quotaInstruments, id: id) {
-                QuotaInstrumentRow(id: id, quota: dict["quota"] ?? "", mcode: dict["mcode"] ?? "",
-                                   mname: dict["mname"] ?? "", unit: dict["unit"] ?? "", qty: num(dict["qty"]))
             }
         }
     }
@@ -243,18 +206,12 @@ public struct LibraryRowCodec {
             profile.libraries.shortlist.insert(ShortlistRow(id: id, coef: 1), at: 0)
         case .materials:
             profile.libraries.materials.insert(MaterialRow(id: id, supply: "甲供"), at: 0)
-        case .rulesVariant:
-            profile.libraries.rules.insert(RuleRow(id: id, supply: "甲供", kind: "变体", appliesTo: "全"), at: 0)
         case .rulesAlt:
             profile.libraries.rules.insert(RuleRow(id: id, supply: "甲供", kind: "备选", appliesTo: "全"), at: 0)
         case .machinePrices:
             profile.libraries.machinePrices.insert(MachinePriceRow(id: id, unit: "台班"), at: 0)
         case .instrumentPrices:
             profile.libraries.instrumentPrices.insert(InstrumentPriceRow(id: id, unit: "台班"), at: 0)
-        case .quotaMachines:
-            profile.libraries.quotaMachines.insert(QuotaMachineRow(id: id, unit: "台班"), at: 0)
-        case .quotaInstruments:
-            profile.libraries.quotaInstruments.insert(QuotaInstrumentRow(id: id, unit: "台班"), at: 0)
         }
     }
 
@@ -272,11 +229,9 @@ public struct LibraryRowCodec {
         case .quotas: profile.libraries.quotas.removeAll { ids.contains($0.id) }
         case .shortlist: profile.libraries.shortlist.removeAll { ids.contains($0.id) }
         case .materials: profile.libraries.materials.removeAll { ids.contains($0.id) }
-        case .rulesVariant, .rulesAlt: profile.libraries.rules.removeAll { ids.contains($0.id) }
+        case .rulesAlt: profile.libraries.rules.removeAll { ids.contains($0.id) }
         case .machinePrices: profile.libraries.machinePrices.removeAll { ids.contains($0.id) }
         case .instrumentPrices: profile.libraries.instrumentPrices.removeAll { ids.contains($0.id) }
-        case .quotaMachines: profile.libraries.quotaMachines.removeAll { ids.contains($0.id) }
-        case .quotaInstruments: profile.libraries.quotaInstruments.removeAll { ids.contains($0.id) }
         }
     }
 

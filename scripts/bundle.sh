@@ -24,8 +24,11 @@ mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp .build/release/TXBudget "$APP_DIR/Contents/MacOS/TXBudget"
 chmod +x "$APP_DIR/Contents/MacOS/TXBudget"
 
-# SwiftPM 资源包（内置完整库 full-library.json，v2.1.0）：Bundle.module 运行时从
-# Contents/Resources 找它；缺失即停，不出没有完整库的包（与图标同等对待）。
+# SwiftPM 资源包（内置完整库 full-library.json，v2.1.0）：运行时由
+# Logic/FullLibrary.swift 以显式路径查找（资源包内 / Resources 根松散副本 /
+# 限深递归兜底）；v2.5.1 起禁止再依赖 Bundle.module 访问器（打包布局下找不到
+# 资源包会 assertionFailure 闪退，见 docs/v2.5.1-crash-fix.md）。
+# 缺失即停，不出没有完整库的包（与图标同等对待）。
 RES_BUNDLE=""
 for cand in ".build/release/TXBudget_TXBudget.bundle" ".build/release/TXBudget_TXBudget.resources"; do
   if [[ -d "$cand" ]]; then RES_BUNDLE="$cand"; break; fi
@@ -39,6 +42,11 @@ if [[ ! -f "$APP_DIR/Contents/Resources/$(basename "$RES_BUNDLE")/full-library.j
   echo "错误：资源包内缺少 full-library.json" >&2
   exit 1
 fi
+
+# 双保险（v2.5.1）：full-library.json 再松散拷一份到 Contents/Resources 根下，
+# 使运行时第二候选路径直接命中，不依赖资源包目录名/布局。
+cp "$APP_DIR/Contents/Resources/$(basename "$RES_BUNDLE")/full-library.json" \
+   "$APP_DIR/Contents/Resources/full-library.json"
 
 # 图标：iconset 必须存在（仓库内），iconutil 只在 macOS 上有。
 if [[ ! -d "Assets/AppIcon.iconset" ]]; then
@@ -81,6 +89,17 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
+
+# 打包末尾断言（v2.5.1 防回归）：full-library.json 两处副本必须都在，缺一即停。
+# CI 另有一步挂载 DMG 复验同一断言（见 .github/workflows/build.yml）。
+for f in "$APP_DIR/Contents/Resources/full-library.json" \
+         "$APP_DIR/Contents/Resources/TXBudget_TXBudget.bundle/full-library.json"; do
+  if [[ ! -f "$f" ]]; then
+    echo "错误：打包断言失败，缺少 $f" >&2
+    exit 1
+  fi
+  echo "打包断言通过：$f"
+done
 
 # 临时签名（ad-hoc）：无需任何证书，CI 的 macOS runner 可直接跑。
 # 作用：把“已损坏，无法打开”（完全无签名时 Gatekeeper 的拦截，无法绕过）变成

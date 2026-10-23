@@ -13,6 +13,11 @@ struct TXBudgetApp: App {
         }
         .defaultSize(width: 1280, height: 800)
         .commands {
+            // 「工程」菜单（v2.6.0 §7）：关闭工程（有改动时先提示保存/放弃）。
+            CommandMenu("工程") {
+                Button("关闭工程") { appState.requestCloseProject() }
+                    .disabled(!appState.hasProject)
+            }
             // 「方案」菜单（v2.5.0 §12.5）：当前资料库方案打勾切换 + 方案文件与
             // 资料库维护入口，全部复用页面既有实现，不另写一套。
             CommandMenu("方案") {

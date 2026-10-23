@@ -28,6 +28,14 @@ struct ContentView: View {
         } message: {
             Text(appState.loadError ?? "")
         }
+        // 关闭工程三选一（v2.6.0 §7）：仅当本会话内工程有改动时由 AppState 置位。
+        .alert("关闭工程？", isPresented: $appState.showCloseProjectPrompt) {
+            Button("保存并关闭") { appState.closeProjectSaving() }
+            Button("不保存（放弃本次修改）", role: .destructive) { appState.closeProjectDiscarding() }
+            Button("取消", role: .cancel) { }
+        } message: {
+            Text("工程“\(appState.openProject?.name ?? "")”在本次打开后有修改。保存并关闭会把修改落盘；不保存将放弃本次打开后的全部修改，恢复为打开时的状态。")
+        }
         .overlay(alignment: .bottom) {
             if let toast = appState.toast {
                 Text(toast)
@@ -63,6 +71,15 @@ struct WorkspaceView: View {
                     Label("工程列表", systemImage: "chevron.left")
                 }
                 .help("返回工程列表")
+            }
+            ToolbarItem(placement: .navigation) {
+                Button {
+                    appState.requestCloseProject()
+                } label: {
+                    Label("关闭工程", systemImage: "xmark.circle")
+                }
+                .disabled(!appState.hasProject)
+                .help("关闭当前工程，回到工程列表（有修改时会先提示保存）")
             }
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
@@ -154,12 +171,7 @@ struct SidebarView: View {
             Section(header: Text("资料库")) {
                 Text("库").font(.caption).foregroundColor(.secondary)
                 ForEach([LibraryViewKey.quotas, .shortlist, .materials, .machinePrices,
-                         .instrumentPrices], id: \.self) { key in
-                    SidebarRow(dest: .libraries(key))
-                }
-                Text("映射关系").font(.caption).foregroundColor(.secondary)
-                ForEach([LibraryViewKey.rulesVariant, .rulesAlt, .quotaMachines,
-                         .quotaInstruments], id: \.self) { key in
+                         .instrumentPrices, .rulesAlt], id: \.self) { key in
                     SidebarRow(dest: .libraries(key))
                 }
                 Text("取费规则").font(.caption).foregroundColor(.secondary)

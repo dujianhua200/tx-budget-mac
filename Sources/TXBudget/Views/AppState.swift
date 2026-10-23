@@ -21,6 +21,11 @@ final class AppState: ObservableObject {
     @Published var libraryMaintenanceRequest: LibraryMaintenanceAction?
     /// 设置页聚焦令牌（v2.5.0）：菜单「工程信息模板…」递增之，设置页据此高亮模板卡片。
     @Published var settingsFocusToken = 0
+    /// 关闭工程（v2.6.0 §7）：打开工程时捕获的基线快照，dirty 判定见
+    /// Logic.projectSessionDirty（忽略 lastOpenedAt/updatedAt）。
+    @Published private(set) var openProjectBaseline: ProjectRecord?
+    /// 有改动时关闭工程的三选一提示是否呈现（ContentView 根部挂 alert）。
+    @Published var showCloseProjectPrompt = false
 
     private let dataURL: URL
     private var autosaveTask: Task<Void, Never>?
@@ -202,7 +207,53 @@ final class AppState: ObservableObject {
             }
         }
         openProjectId = id
+        // 基线在打戳之后捕获（关闭工程 dirty 判定的比较基准）。
+        openProjectBaseline = db.projects.first { $0.id == id }
         nav = .overview
+    }
+
+    // MARK: - 关闭工程（v2.6.0 §7）
+
+    /// 当前打开工程在本会话内是否有改动（基线 vs 当前，纯逻辑判定）。
+    var openProjectSessionDirty: Bool {
+        projectSessionDirty(baseline: openProjectBaseline, current: openProject)
+    }
+
+    /// 请求关闭工程：无改动直接关；有改动置提示态，由视图弹
+    /// 保存并关闭 / 不保存（放弃修改）/ 取消。
+    func requestCloseProject() {
+        guard openProjectId != nil else { return }
+        if openProjectSessionDirty {
+            showCloseProjectPrompt = true
+        } else {
+            performCloseProject()
+        }
+    }
+
+    /// 保存并关闭：先落盘再关。
+    func closeProjectSaving() {
+        flushSaves()
+        performCloseProject()
+    }
+
+    /// 不保存关闭：把工程恢复为打开时基线（放弃本次打开后的全部修改）后落盘关闭。
+    func closeProjectDiscarding() {
+        if let baseline = openProjectBaseline, let id = openProjectId {
+            updateDb { d in
+                if let i = d.projects.firstIndex(where: { $0.id == id }) {
+                    d.projects[i] = baseline
+                }
+            }
+        }
+        flushSaves()
+        performCloseProject()
+    }
+
+    private func performCloseProject() {
+        openProjectId = nil
+        openProjectBaseline = nil
+        showCloseProjectPrompt = false
+        nav = .projectList
     }
 
     func createProject(name: String, template: ProjectRecord? = nil) {
@@ -219,6 +270,7 @@ final class AppState: ObservableObject {
         let toInsert = created
         updateDb { d in d.projects.insert(toInsert, at: 0) }
         openProjectId = created.id
+        openProjectBaseline = db.projects.first { $0.id == created.id }
         nav = .projectInfo
         showToast("已新建工程“\(name)”")
     }
@@ -236,7 +288,10 @@ final class AppState: ObservableObject {
 
     func deleteProjects(_ ids: [String]) {
         updateDb({ d in d.projects.removeAll { ids.contains($0.id) } }, major: true)
-        if let open = openProjectId, ids.contains(open) { openProjectId = nil }
+        if let open = openProjectId, ids.contains(open) {
+            openProjectId = nil
+            openProjectBaseline = nil
+        }
         showToast("已删除 \(ids.count) 个工程")
     }
 

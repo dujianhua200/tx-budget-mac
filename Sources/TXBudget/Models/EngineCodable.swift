@@ -154,7 +154,7 @@ extension ProjectInfo: Codable {
 // MARK: - QuantityRow / overrides
 
 extension QuantityRow: Codable {
-    enum CodingKeys: String, CodingKey { case id, quota, variant, unit, qty, coef }
+    enum CodingKeys: String, CodingKey { case id, quota, variant, unit, qty, coef, tech, labor }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = c.decodeLenientStringOptional(forKey: .id)
@@ -163,6 +163,9 @@ extension QuantityRow: Codable {
         unit = c.decodeLenientStringOptional(forKey: .unit)
         qty = c.decodeLenientDouble(forKey: .qty)
         coef = c.decodeLenientDouble(forKey: .coef)
+        // v2.6.0 工日快照：旧文件无此二键 → nil（回落定额库值）。
+        tech = c.decodeLenientDouble(forKey: .tech)
+        labor = c.decodeLenientDouble(forKey: .labor)
     }
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -172,6 +175,70 @@ extension QuantityRow: Codable {
         try c.encodeIfPresent(unit, forKey: .unit)
         try c.encodeIfPresent(qty, forKey: .qty)
         try c.encodeIfPresent(coef, forKey: .coef)
+        try c.encodeIfPresent(tech, forKey: .tech)
+        try c.encodeIfPresent(labor, forKey: .labor)
+    }
+}
+
+extension MaterialRowEdit: Codable {
+    enum CodingKeys: String, CodingKey {
+        case key, code, name, spec, unit, supply, category, remark, deleted
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        key = c.decodeLenientString(forKey: .key)
+        code = c.decodeLenientStringOptional(forKey: .code)
+        name = c.decodeLenientStringOptional(forKey: .name)
+        spec = c.decodeLenientStringOptional(forKey: .spec)
+        unit = c.decodeLenientStringOptional(forKey: .unit)
+        supply = c.decodeLenientStringOptional(forKey: .supply)
+        category = c.decodeLenientStringOptional(forKey: .category)
+        remark = c.decodeLenientStringOptional(forKey: .remark)
+        deleted = c.decodeLenientBool(forKey: .deleted, default: false)
+    }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(key, forKey: .key)
+        try c.encodeIfPresent(code, forKey: .code)
+        try c.encodeIfPresent(name, forKey: .name)
+        try c.encodeIfPresent(spec, forKey: .spec)
+        try c.encodeIfPresent(unit, forKey: .unit)
+        try c.encodeIfPresent(supply, forKey: .supply)
+        try c.encodeIfPresent(category, forKey: .category)
+        try c.encodeIfPresent(remark, forKey: .remark)
+        try c.encode(deleted, forKey: .deleted)
+    }
+}
+
+extension ManualMaterialRow: Codable {
+    enum CodingKeys: String, CodingKey {
+        case id, code, name, spec, unit, qty, priceExcl, supply, category, remark
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = c.decodeLenientString(forKey: .id)
+        code = c.decodeLenientString(forKey: .code)
+        name = c.decodeLenientString(forKey: .name)
+        spec = c.decodeLenientString(forKey: .spec)
+        unit = c.decodeLenientString(forKey: .unit)
+        qty = c.decodeLenientDouble(forKey: .qty, default: 0)
+        priceExcl = c.decodeLenientDouble(forKey: .priceExcl, default: 0)
+        supply = c.decodeLenientString(forKey: .supply, default: "甲供")
+        category = c.decodeLenientString(forKey: .category)
+        remark = c.decodeLenientString(forKey: .remark)
+    }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(code, forKey: .code)
+        try c.encode(name, forKey: .name)
+        try c.encode(spec, forKey: .spec)
+        try c.encode(unit, forKey: .unit)
+        try c.encode(qty, forKey: .qty)
+        try c.encode(priceExcl, forKey: .priceExcl)
+        try c.encode(supply, forKey: .supply)
+        try c.encode(category, forKey: .category)
+        try c.encode(remark, forKey: .remark)
     }
 }
 

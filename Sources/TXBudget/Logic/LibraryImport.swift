@@ -186,12 +186,9 @@ public enum ImportLibraryKind: String, Equatable, CaseIterable {
         case .quotas: self = .quotas
         case .shortlist: self = .shortlist
         case .materials: self = .materials
-        case .rulesVariant: self = .rulesVariant
         case .rulesAlt: self = .rulesAlt
         case .machinePrices: self = .machinePrices
         case .instrumentPrices: self = .instrumentPrices
-        case .quotaMachines: self = .quotaMachines
-        case .quotaInstruments: self = .quotaInstruments
         }
     }
 
@@ -202,13 +199,11 @@ public enum ImportLibraryKind: String, Equatable, CaseIterable {
         case .quotas: return .quotas
         case .shortlist: return .shortlist
         case .materials: return .materials
-        case .rulesVariant: return .rulesVariant
         case .rulesAlt: return .rulesAlt
         case .machinePrices: return .machinePrices
         case .instrumentPrices: return .instrumentPrices
-        case .quotaMachines: return .quotaMachines
-        case .quotaInstruments: return .quotaInstruments
-        case .rates, .table5Fees: return nil
+        // v2.6.0：三张关联表不再有资料库页面（数据层 kind 保留，导入导出格式兼容不变）。
+        case .rulesVariant, .quotaMachines, .quotaInstruments, .rates, .table5Fees: return nil
         }
     }
 
@@ -217,12 +212,12 @@ public enum ImportLibraryKind: String, Equatable, CaseIterable {
         case .quotas: return "定额库"
         case .shortlist: return "常用短单"
         case .materials: return "材料库"
-        case .rulesVariant: return "定额—材料映射"
+        case .rulesVariant: return "定额—材料关联"
         case .rulesAlt: return "关联规则（备选）"
         case .machinePrices: return "机械库"
         case .instrumentPrices: return "仪器仪表库"
-        case .quotaMachines: return "定额—机械映射"
-        case .quotaInstruments: return "定额—仪表映射"
+        case .quotaMachines: return "定额—机械关联"
+        case .quotaInstruments: return "定额—仪表关联"
         case .rates: return "表二费率"
         case .table5Fees: return "表五费用"
         }
@@ -368,6 +363,31 @@ public func classifyColumns(for kind: ImportLibraryKind) -> [ImportClassifyColum
         return LibraryRowCodec.table5Columns.map {
             ImportClassifyColumn(field: $0.key, label: $0.label, kind: $0.kind, options: $0.options)
         }
+    }
+    // v2.6.0：三张关联表已无资料库页面，但导入数据层保留完整列定义（校验/分类口径不变）。
+    if kind == .rulesVariant {
+        return [
+            ImportClassifyColumn(field: "quota", label: "定额编号", kind: .text),
+            ImportClassifyColumn(field: "material", label: "材料", kind: .text),
+            ImportClassifyColumn(field: "spec", label: "规格", kind: .text),
+            ImportClassifyColumn(field: "unit", label: "单位", kind: .text),
+            ImportClassifyColumn(field: "consumption", label: "单位消耗量", kind: .number),
+            ImportClassifyColumn(field: "supply", label: "供货", kind: .select, options: ["甲供", "乙供", "设备"]),
+            ImportClassifyColumn(field: "kind", label: "类型", kind: .select, options: ["变体", "变体*", "通用"]),
+            ImportClassifyColumn(field: "variant", label: "变体项目名称", kind: .text),
+            ImportClassifyColumn(field: "remark", label: "备注", kind: .text),
+            ImportClassifyColumn(field: "appliesTo", label: "适用工程", kind: .text),
+        ]
+    }
+    if kind == .quotaMachines || kind == .quotaInstruments {
+        let isMachine = kind == .quotaMachines
+        return [
+            ImportClassifyColumn(field: "quota", label: "定额编号", kind: .text),
+            ImportClassifyColumn(field: "mcode", label: isMachine ? "机械编号" : "仪表编号", kind: .text),
+            ImportClassifyColumn(field: "mname", label: isMachine ? "机械名称" : "仪表名称", kind: .text),
+            ImportClassifyColumn(field: "unit", label: "单位", kind: .text),
+            ImportClassifyColumn(field: "qty", label: "数量(台班)", kind: .number),
+        ]
     }
     guard let viewKey = kind.libraryViewKey else { return [] }
     return LibraryRowCodec.columns(for: viewKey).map {

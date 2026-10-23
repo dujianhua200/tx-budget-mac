@@ -5,7 +5,7 @@ import Foundation
 /// “实际生效”判定与引擎 `calcProject` 逐条同口径（引擎一字不改，等价性由
 /// WorkloadLinksTests 的对照测试钉死）：
 /// - 参与行：定额在库中、数量非 nil 且 > 0 且非 NaN、系数（nil 按 1）> 0 且非 NaN。
-/// - 机械/仪表：本行基数 = 数量 × 系数（参与时），台班贡献 = 基数 × 映射消耗量；
+/// - 机械/仪表：本行基数 = 数量 × 系数（参与时），台班贡献 = 基数 × 关联消耗量；
 ///   单价按 mcode 查价目库（同码后行覆盖先行），无码/无价按 0。
 /// - 主材·通用：基数 = 参与行原始数量（不乘系数）；变体：variant 精确相等（nil 按 ""）；
 ///   变体*：引擎单独遍历全部行——定额同、数量 ≠ 0 非 NaN、variant 前缀命中即计（不查有效性）；
@@ -71,7 +71,7 @@ public struct EffectiveEquipLink: Equatable {
     public var mcode: String
     public var mname: String
     public var unit: String
-    /// 映射消耗量（台班/单位工程量）。
+    /// 关联消耗量（台班/单位工程量）。
     public var consumption: Double
     /// 本行加权工程量 = 数量 × 系数（参与时；否则 0）。
     public var basisQty: Double
@@ -192,18 +192,66 @@ public func firstQuota(code: String, libraries: LibrarySet) -> QuotaRow? {
     libraries.quotas.first { $0.code == code }
 }
 
-/// 表三甲逐行贡献（v2.5.0，docs/v2-ui-design.md §12.1）：本行对引擎表三甲的工日贡献。
-/// 引擎口径：按定额聚合 加权量 = Σ 数量×系数（逐行有效性同 `workloadRowState`），
-/// 每定额 技工 = r2(加权量 × 技工单位工日)（普工同理）；逐行贡献 = 参与时
-/// 数量 × 系数 × 单位工日，不参与（孤儿/数量 0/负数/系数无效）= 0。
+/// 行有效技工（v2.6.0 快照模型）：行快照优先，否则定额库值。引擎同口径。
+public func effectiveTech(_ row: QuantityRow, _ quota: QuotaRow?) -> Double {
+    row.tech ?? num(quota?.tech)
+}
+
+/// 行有效普工（v2.6.0 快照模型）：行快照优先，否则定额库值。引擎同口径。
+public func effectiveLabor(_ row: QuantityRow, _ quota: QuotaRow?) -> Double {
+    row.labor ?? num(quota?.labor)
+}
+
+/// 表三甲逐行贡献（v2.5.0，docs/v2-ui-design.md §12.1；v2.6.0 改用行有效工日）：
+/// 本行对引擎表三甲的工日贡献。引擎口径：参与行按（编号 × 有效技工 × 有效普工）
+/// 分组、组内加权量 = Σ 数量×系数、每组 r2(加权量 × 有效单位工日)；逐行贡献 =
+/// 参与时 数量 × 系数 × 有效单位工日，不参与（孤儿/数量 0/负数/系数无效）= 0。
+/// 有效单位工日 = 行快照 ?? 定额库值（快照模型，引擎与显示同源）。
 /// “工日X0.5”类条目由行系数承载（如系数 0.5），公式必须含系数。
-/// 全部行贡献之和与引擎 techSub/laborSub 仅差每定额一处 r2 舍入（每组 ≤0.005）。
+/// 全部行贡献之和与引擎 techSub/laborSub 仅差每组一处 r2 舍入（每组 ≤0.005）。
 public func table3ARowContribution(row: QuantityRow, libraries: LibrarySet)
     -> (tech: Double, labor: Double) {
     guard let quota = firstQuota(code: row.quota, libraries: libraries) else { return (0, 0) }
     guard workloadRowState(row: row, libraries: libraries) == .active else { return (0, 0) }
     let weighted = num(row.qty) * (row.coef ?? 1)
-    return (weighted * num(quota.tech), weighted * num(quota.labor))
+    return (weighted * effectiveTech(row, quota), weighted * effectiveLabor(row, quota))
+}
+
+// MARK: - 快照回填与行移动（v2.6.0 §6/§9）
+
+/// 给旧工程条目按定额库回填缺失的快照（工日 tech/labor、单位 unit）：
+/// 已有快照一律不覆盖；定额不在库中（孤儿行）原样返回。variant（名称/型号
+/// 匹配键）不在回填范围——它决定主材关联匹配，绝不由回填改动。
+/// 显示层对缺快照行同样走“快照 ?? 库值”回落；编辑落盘时调用本函数即完成迁移。
+public func fillQuantitySnapshots(_ rows: [QuantityRow], libraries: LibrarySet) -> [QuantityRow] {
+    rows.map { row in
+        guard let quota = firstQuota(code: row.quota, libraries: libraries) else { return row }
+        var r = row
+        if r.tech == nil { r.tech = quota.tech }
+        if r.labor == nil { r.labor = quota.labor }
+        if r.unit == nil { r.unit = quota.unit }
+        return r
+    }
+}
+
+/// 给缺 id 的工程量行补 id（移动/删除等按 id 定位的操作前调用，落盘迁移的一环）。
+public func ensureQuantityRowIds(_ rows: [QuantityRow]) -> [QuantityRow] {
+    rows.map { row in
+        guard row.id == nil || row.id!.isEmpty else { return row }
+        var r = row
+        r.id = newUID()
+        return r
+    }
+}
+
+/// 工程量行与相邻行交换（上移 delta=-1 / 下移 delta=+1）；越界或下标非法原样返回。
+public func moveQuantityRow(_ rows: [QuantityRow], at index: Int, delta: Int) -> [QuantityRow] {
+    guard rows.indices.contains(index) else { return rows }
+    let j = index + delta
+    guard rows.indices.contains(j) else { return rows }
+    var out = rows
+    out.swapAt(index, j)
+    return out
 }
 
 // MARK: - 可选型号（变体清单，v2.5.0 §12.4）

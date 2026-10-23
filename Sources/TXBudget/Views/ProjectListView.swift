@@ -1,22 +1,16 @@
 #if os(macOS)
 import SwiftUI
 
-/// 工程列表（启动页，v2.0.0）：最近工程卡片 / 多选列表双模式 + 搜索 + 新建工程向导。
-/// 启动先到这里选工程，不再一启动摊开全部表格（docs/v2-ui-design.md §2、§3）。
+/// 工程列表（启动页，v2.0.0；v2.6.0 起只有列表模式——用户裁决去掉卡片模式）：
+/// 多选列表 + 搜索 + 新建工程向导。启动先到这里选工程（docs/v2.6-batch-design.md §1）。
 struct ProjectListView: View {
     @EnvironmentObject private var appState: AppState
     @State private var query = ""
-    @State private var mode: Mode = .cards
     @State private var selected: Set<String> = []
     @State private var showWizard = false
     @State private var pendingDelete: [ProjectRecord] = []
     @State private var showDeleteConfirm = false
     @FocusState private var searchFocused: Bool
-
-    enum Mode: String, CaseIterable {
-        case cards = "卡片"
-        case list = "列表"
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -29,11 +23,6 @@ struct ProjectListView: View {
                 }
                 Spacer()
                 searchField
-                Picker("显示方式", selection: $mode) {
-                    ForEach(Mode.allCases, id: \.self) { m in Text(m.rawValue).tag(m) }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 130)
                 Button("批量生成") { appState.nav = .batch }
                 Button("＋ 新建工程") { showWizard = true }
                     .buttonStyle(.borderedProminent)
@@ -50,19 +39,6 @@ struct ProjectListView: View {
                     action: { showWizard = true }
                 )
                 .cardStyle()
-            } else if mode == .cards {
-                ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16)],
-                              spacing: 16) {
-                        ForEach(filteredProjects, id: \.id) { p in
-                            ProjectCard(project: p) {
-                                pendingDelete = [p]
-                                showDeleteConfirm = true
-                            }
-                        }
-                    }
-                    .padding(.vertical, 2)
-                }
             } else {
                 listMode
             }
@@ -183,63 +159,6 @@ struct ProjectListView: View {
             let names = result.failures.map { $0.0 }.joined(separator: "、")
             appState.showToast("已导出 \(result.succeeded) 个，失败 \(result.failures.count) 个（\(names)）")
         }
-    }
-}
-
-/// 工程卡片（列表页卡片模式）：工程名 / 方案 / 总造价 / 工日 / 更新时间，点击打开。
-struct ProjectCard: View {
-    @EnvironmentObject private var appState: AppState
-    var project: ProjectRecord
-    var onDelete: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top) {
-                Text(project.name)
-                    .font(.headline)
-                    .lineLimit(2)
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption).foregroundColor(.secondary)
-            }
-            Text("方案：\(profileName)")
-                .font(.caption).foregroundColor(.secondary)
-            Divider()
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("总造价（含税）").font(.caption).foregroundColor(.secondary)
-                    Text(money(result?.table1.grandIncl) + " 元")
-                        .font(.title3).fontWeight(.bold).monospacedDigit()
-                }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("总工日").font(.caption).foregroundColor(.secondary)
-                    Text(result.map { num2($0.techDays + $0.laborDays) } ?? "—")
-                        .font(.headline).monospacedDigit()
-                }
-            }
-            HStack {
-                Text("工程量 \(project.quantities.count) 行")
-                Spacer()
-                Text("改于 \(dateTimeText(project.updatedAt))")
-            }
-            .font(.caption).foregroundColor(.secondary)
-        }
-        .cardStyle()
-        .contentShape(Rectangle())
-        .onTapGesture { appState.openProject(project.id) }
-        .contextMenu {
-            Button("打开") { appState.openProject(project.id) }
-            Button("复制") { appState.duplicateProject(project) }
-            Divider()
-            Button("删除", role: .destructive) { onDelete() }
-        }
-    }
-
-    private var result: CalcResult? { appState.calcResult(for: project) }
-
-    private var profileName: String {
-        appState.db.configurationProfiles.first { $0.id == project.profileId }?.name ?? "—"
     }
 }
 

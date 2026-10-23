@@ -35,15 +35,17 @@ final class LibraryRowCodecTests: XCTestCase {
         XCTAssertEqual(p.libraries.quotas.last?.code, "TXL1-009")
     }
 
-    func testRulesVariantAndAltAreFilteredViews() {
+    func testRulesAltViewFiltersAltKindOnly() {
+        // v2.6.0：资料库只保留“关联规则（备选）”视图（变体/机械/仪表关联的维护
+        // 收敛到表三甲底部关联区）；数据层 rules 全量仍在（见导入层回归测试）。
         let p = sampleProfile()
-        let variant = LibraryRowCodec.dicts(for: .rulesVariant, profile: p)
         let alt = LibraryRowCodec.dicts(for: .rulesAlt, profile: p)
-        XCTAssertEqual(variant.map { $0["id"] }, ["r1"])
         XCTAssertEqual(alt.map { $0["id"] }, ["r2"])
-        // 两视图列定义不同：备选视图 kind 只给“备选”。
+        // 备选视图 kind 只给“备选”。
         let altKind = LibraryRowCodec.columns(for: .rulesAlt).first { $0.key == "kind" }
         XCTAssertEqual(altKind?.options, ["备选"])
+        // 页面已下线：导航键里不再有三张关联表。
+        XCTAssertFalse(LibraryViewKey.allCases.map { $0.label }.contains { $0.contains("映射") })
     }
 
     func testRulesAltCommitMapsBackToStorage() {

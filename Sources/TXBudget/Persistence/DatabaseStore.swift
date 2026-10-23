@@ -89,6 +89,8 @@ public struct DatabaseStore {
     /// v2 文件内存修复（对照 Electron `repairV2`）：补 meta / activeProfileId / 工程 profileId 与数组默认值。
     static func repair(_ db: DbFile) -> DbFile {
         var out = db
+        // v2.6.0 一次性数据迁移（幂等，标记存 meta.appliedMigrations）。
+        _ = migrateCableMaterialUnits(&out)
         if out.configurationProfiles.isEmpty {
             // 空方案列表属于损坏数据，由调用方按 missingProfiles 处理。
             return out

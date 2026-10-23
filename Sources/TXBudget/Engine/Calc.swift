@@ -272,6 +272,9 @@ public func calcProject(_ project: Project, _ libs: Libs) -> CalcResult {
     // 孤儿行（编号不在库中）、无效行（数量<0 / 系数<=0）记警告且不参与计算。
     var byQuota: [String: (raw: Double, weighted: Double)] = [:]
     var byVariant: [String: Double] = [:]
+    // v2.6.0 快照模型：参与行的逐行有效工日（行快照 ?? 定额库值）与加权量，
+    // 供表三甲按（编号 × 有效技工 × 有效普工）分组（§6）。收集口径与 byQuota 完全一致。
+    var laborRowsByCode: [String: [(tech: Double, labor: Double, weighted: Double)]] = [:]
     let surveyCodes = ["TXL1-001", "TXL1-002", "TXL1-003"]
     var surveyRaw = 0.0
     var orphanRowIds: [String] = []
@@ -304,6 +307,11 @@ public func calcProject(_ project: Project, _ libs: Libs) -> CalcResult {
         a.raw += qty
         a.weighted += qty * coef
         byQuota[q.quota] = a
+        if let quota = quotaByCode[q.quota] {
+            laborRowsByCode[q.quota, default: []].append(
+                (tech: q.tech ?? num(quota.tech), labor: q.labor ?? num(quota.labor),
+                 weighted: qty * coef))
+        }
         let vk = "\(q.quota)|\(q.variant ?? "")"
         byVariant[vk] = (byVariant[vk] ?? 0) + qty
         if surveyCodes.contains(q.quota) { surveyRaw += qty }
@@ -325,17 +333,34 @@ public func calcProject(_ project: Project, _ libs: Libs) -> CalcResult {
     }
 
     // ---- 2. 表三甲：工日 ----
+    // v2.6.0：按（编号 × 有效技工 × 有效普工）分组聚合——行快照优先（row.tech ?? 库值），
+    // 组内加权量求和、每组一次 r2。无快照或快照 = 库值时每编号恰一组，与旧口径逐项一致；
+    // 用户改某行工日后该行自成一组。定额编号重复时按首条匹配（与 duplicateCode 警告口径一致）。
     var table3A: [Table3ARow] = []
     var techSub = 0.0, laborSub = 0.0
+    var emittedCodes = Set<String>()
     for quota in quotas {
-        guard let agg = byQuota[quota.code], agg.weighted != 0, !agg.weighted.isNaN else { continue }
-        let tech = r2(agg.weighted * num(quota.tech))
-        let labor = r2(agg.weighted * num(quota.labor))
-        techSub += tech
-        laborSub += labor
-        table3A.append(Table3ARow(code: quota.code, name: quota.name, unit: quota.unit,
-                                   qty: r2(agg.weighted), techUnit: num(quota.tech),
-                                   laborUnit: num(quota.labor), tech: tech, labor: labor))
+        guard !emittedCodes.contains(quota.code) else { continue }
+        guard let rows = laborRowsByCode[quota.code], !rows.isEmpty else { continue }
+        emittedCodes.insert(quota.code)
+        var groupOrder: [(tech: Double, labor: Double)] = []
+        var groupWeighted: [String: Double] = [:]
+        for r in rows {
+            let k = "\(r.tech)|\(r.labor)"
+            if groupWeighted[k] == nil { groupOrder.append((tech: r.tech, labor: r.labor)) }
+            groupWeighted[k, default: 0] += r.weighted
+        }
+        for g in groupOrder {
+            let w = groupWeighted["\(g.tech)|\(g.labor)"] ?? 0
+            guard w != 0, !w.isNaN else { continue }
+            let tech = r2(w * g.tech)
+            let labor = r2(w * g.labor)
+            techSub += tech
+            laborSub += labor
+            table3A.append(Table3ARow(code: quota.code, name: quota.name, unit: quota.unit,
+                                      qty: r2(w), techUnit: g.tech,
+                                      laborUnit: g.labor, tech: tech, labor: labor))
+        }
     }
     let totalDays = techSub + laborSub
     let adjRate: Double = totalDays <= 100 ? 0.15 : totalDays <= 250 ? 0.1 : 0
@@ -413,39 +438,93 @@ public func calcProject(_ project: Project, _ libs: Libs) -> CalcResult {
     for a in project.materialAdjust { adjustByKey[a.key] = num(a.delta) }
     var priceOverride: [String: Double] = [:]
     for p in project.materialPriceOverrides { priceOverride[p.key] = num(p.priceExcl) }
+    // 工程级材料层（v2.6.0 §5）：生成行覆盖按身份键定位（后行覆盖先行）。
+    var editByKey: [String: MaterialRowEdit] = [:]
+    for e in project.materialEdits { editByKey[e.key] = e }
+
+    func taxRateFor(_ supply: String) -> Double {
+        supply == "甲供" ? jiaTax : supply == "乙供" ? yiTax : jiaTax
+    }
+
+    // 生效行集（跨分组一次组装）：生成行套工程级覆盖 → 并入手工行。
+    // totals 需按未舍入金额累加（与旧口径一致），故行旁带 raw 金额。
+    var effectiveRows: [(row: Table4Row, rawExcl: Double, rawVat: Double)] = []
+    for key in matQtyOrder {
+        guard let v = matQty[key] else { continue }
+        let lib = matByKey[key]
+        let generatedSupply: String
+        if let lib, !lib.supply.isEmpty {
+            generatedSupply = lib.supply
+        } else {
+            generatedSupply = v.supply
+        }
+        let qty = v.auto + (adjustByKey[key] ?? 0)
+        if qty == 0 || qty.isNaN { continue }
+        let edit = editByKey[key]
+        if edit?.deleted == true { continue }
+        // JS：key.split('|') 解构取前两段（spec 含 '|' 时多余部分丢弃）。
+        let parts = key.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
+        let genName = parts.count > 0 ? parts[0] : ""
+        let genSpec = parts.count > 1 ? parts[1] : ""
+        let supply = edit?.supply ?? generatedSupply
+        let taxRate = taxRateFor(supply)
+        let priceExcl = priceOverride[key] ?? num(lib?.priceExcl)
+        let priceVat = priceExcl * taxRate
+        let priceIncl = priceExcl + priceVat
+        let amtExcl = qty * priceExcl
+        let amtVat = qty * priceVat
+        var row = Table4Row(key: key, name: edit?.name ?? genName, spec: edit?.spec ?? genSpec,
+                            unit: edit?.unit ?? (lib?.unit ?? ""),
+                            qty: r2(qty), autoQty: r2(v.auto), delta: adjustByKey[key] ?? 0,
+                            priceExcl: r2(priceExcl), priceVat: r2(priceVat),
+                            priceIncl: r2(priceIncl), amtExcl: r2(amtExcl), amtVat: r2(amtVat),
+                            amtIncl: r2(amtExcl + amtVat), unmatched: lib == nil)
+        row.code = edit?.code ?? ""
+        row.category = edit?.category ?? ""
+        row.remark = edit?.remark ?? (lib?.remark ?? "")
+        row.supply = supply
+        effectiveRows.append((row: row, rawExcl: amtExcl, rawVat: amtVat))
+    }
+    // 手工行：与生成行同金额公式；数量为 0 也保留（用户在表四逐行填写的载体）。
+    for m in project.manualMaterials {
+        let taxRate = taxRateFor(m.supply)
+        let qty = num(m.qty)
+        let priceExcl = num(m.priceExcl)
+        let priceVat = priceExcl * taxRate
+        let priceIncl = priceExcl + priceVat
+        let amtExcl = qty * priceExcl
+        let amtVat = qty * priceVat
+        var row = Table4Row(key: m.id, name: m.name, spec: m.spec, unit: m.unit,
+                            qty: r2(qty), autoQty: r2(qty), delta: 0,
+                            priceExcl: r2(priceExcl), priceVat: r2(priceVat),
+                            priceIncl: r2(priceIncl), amtExcl: r2(amtExcl), amtVat: r2(amtVat),
+                            amtIncl: r2(amtExcl + amtVat), unmatched: false)
+        row.code = m.code
+        row.category = m.category
+        row.remark = m.remark
+        row.supply = m.supply
+        row.isManual = true
+        effectiveRows.append((row: row, rawExcl: amtExcl, rawVat: amtVat))
+    }
 
     func buildMatTable(_ supply: String) -> Table4Result {
-        var rows: [Table4Row] = []
-        var totalExcl = 0.0, totalVat = 0.0
-        for key in matQtyOrder {
-            guard let v = matQty[key] else { continue }
-            let lib = matByKey[key]
-            let libSupply: String
-            if let lib, !lib.supply.isEmpty {
-                libSupply = lib.supply
-            } else {
-                libSupply = v.supply
+        // 表内行序：materialOrder 命中的按其序在前，未列入者按生成序接末尾（稳定）。
+        let orderRank: [String: Int] = Dictionary(
+            uniqueKeysWithValues: project.materialOrder.enumerated().map { ($0.element, $0.offset) })
+        let members = effectiveRows.enumerated()
+            .filter { $0.element.row.supply == supply }
+            .sorted { a, b in
+                let ra = orderRank[a.element.row.key] ?? Int.max
+                let rb = orderRank[b.element.row.key] ?? Int.max
+                if ra != rb { return ra < rb }
+                return a.offset < b.offset
             }
-            guard libSupply == supply else { continue }
-            // JS：key.split('|') 解构取前两段（spec 含 '|' 时多余部分丢弃）。
-            let parts = key.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
-            let name = parts.count > 0 ? parts[0] : ""
-            let spec = parts.count > 1 ? parts[1] : ""
-            let qty = v.auto + (adjustByKey[key] ?? 0)
-            if qty == 0 || qty.isNaN { continue }
-            let taxRate = supply == "甲供" ? jiaTax : supply == "乙供" ? yiTax : jiaTax
-            let priceExcl = priceOverride[key] ?? num(lib?.priceExcl)
-            let priceVat = priceExcl * taxRate
-            let priceIncl = priceExcl + priceVat
-            let amtExcl = qty * priceExcl
-            let amtVat = qty * priceVat
-            totalExcl += amtExcl
-            totalVat += amtVat
-            rows.append(Table4Row(key: key, name: name, spec: spec, unit: lib?.unit ?? "",
-                                  qty: r2(qty), autoQty: r2(v.auto), delta: adjustByKey[key] ?? 0,
-                                  priceExcl: r2(priceExcl), priceVat: r2(priceVat),
-                                  priceIncl: r2(priceIncl), amtExcl: r2(amtExcl), amtVat: r2(amtVat),
-                                  amtIncl: r2(amtExcl + amtVat), unmatched: lib == nil))
+        var totalExcl = 0.0, totalVat = 0.0
+        var rows: [Table4Row] = []
+        for m in members {
+            totalExcl += m.element.rawExcl
+            totalVat += m.element.rawVat
+            rows.append(m.element.row)
         }
         return Table4Result(rows: rows, totalExcl: r2(totalExcl), totalVat: r2(totalVat),
                             totalIncl: r2(totalExcl + totalVat))

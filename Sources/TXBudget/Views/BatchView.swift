@@ -174,7 +174,8 @@ struct BatchView: View {
                 let quota = libs.quotas.first { $0.code == q.quota }
                 let coef = q.coef != 0 ? q.coef : ((short?.coef ?? 0) != 0 ? (short?.coef ?? 0) : 1)
                 return QuantityRow(id: newUID(), quota: q.quota, variant: q.variant,
-                                   unit: short?.unit ?? quota?.unit ?? "", qty: q.qty, coef: coef)
+                                   unit: short?.unit ?? quota?.unit ?? "", qty: q.qty, coef: coef,
+                                   tech: quota?.tech, labor: quota?.labor)
             }
             created.append(np)
         }

@@ -1,7 +1,7 @@
 #if os(macOS)
 import SwiftUI
 
-/// 工作量 · 机械（表三乙）：由定额—机械映射自动汇总。
+/// 工作量 · 机械（表三乙）：由定额—机械关联自动汇总。
 struct WorkloadMachinesView: View {
     @EnvironmentObject private var appState: AppState
     var project: ProjectRecord

@@ -88,6 +88,9 @@ public func newProject(_ db: DbFile, name: String, template: ProjectRecord? = ni
         p.quantities = template.quantities.map { var q = $0; q.id = q.id ?? newUID(); return q }
         p.materialAdjust = template.materialAdjust
         p.materialPriceOverrides = template.materialPriceOverrides
+        p.materialEdits = template.materialEdits
+        p.manualMaterials = template.manualMaterials
+        p.materialOrder = template.materialOrder
         p.ruleOverrides = template.ruleOverrides
         p.rateOverrides = template.rateOverrides
         p.table5Overrides = template.table5Overrides

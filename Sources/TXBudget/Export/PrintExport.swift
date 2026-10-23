@@ -646,25 +646,37 @@ struct GroupedQuantity {
     var kind: GroupedKind
     var code: String
     var variant: String
-    var unit: String // 孤儿行：工程量行 unit
+    var unit: String // 普通组：首行有效单位（行快照 ?? 定额库）；孤儿行：工程量行 unit
     var weighted: Double
+    /// 普通组首行的有效单位工日（v2.6.0 快照模型：行快照 ?? 定额库值）；孤儿行为 0。
+    var techUnit: Double = 0
+    var laborUnit: Double = 0
 }
 
 /// 工程量按 (定额编号, 变体) 分组（首次出现顺序；孤儿行单独成组）。
-func groupQuantities(_ project: Project, _ quotaByCode: [String: QuotaRow]) -> [GroupedQuantity] {
+/// splitBySnapshot（v2.6.0，仅导出表三甲用）：组键追加有效技工/普工/单位判别，
+/// 改过工日快照的行自成一组（与引擎表三甲分组同口径）；表三乙/丙不启用，
+/// 分组与旧版逐项一致。
+func groupQuantities(_ project: Project, _ quotaByCode: [String: QuotaRow],
+                     splitBySnapshot: Bool = false) -> [GroupedQuantity] {
     var entries: [GroupedQuantity] = []
     var map: [String: Int] = [:]
     for q in project.quantities {
         let qty = num(q.qty)
-        if quotaByCode[q.quota] != nil {
+        if let quota = quotaByCode[q.quota] {
             let coef = q.coef ?? 1
             if !(qty > 0) || !(coef > 0) { continue } // 零/无效行不参与计算（与引擎一致）
-            let key = "q|\(q.quota)|\(q.variant ?? "")"
+            let effTech = q.tech ?? num(quota.tech)
+            let effLabor = q.labor ?? num(quota.labor)
+            let effUnit = q.unit ?? quota.unit
+            var key = "q|\(q.quota)|\(q.variant ?? "")"
+            if splitBySnapshot { key += "|\(effTech)|\(effLabor)|\(effUnit)" }
             if let idx = map[key] { entries[idx].weighted += qty * coef }
             else {
                 map[key] = entries.count
                 entries.append(GroupedQuantity(kind: .normal, code: q.quota, variant: q.variant ?? "",
-                                              unit: "", weighted: qty * coef))
+                                               unit: effUnit, weighted: qty * coef,
+                                               techUnit: effTech, laborUnit: effLabor))
             }
         } else {
             if !(qty > 0) { continue }
@@ -707,7 +719,7 @@ struct Table3AEntry {
 func table3AEntries(_ ctx: PrintContext) -> [Table3AEntry] {
     if let profile = ctx.profile {
         _ = profile
-        return groupQuantities(ctx.project, ctx.quotaByCode).map { e in
+        return groupQuantities(ctx.project, ctx.quotaByCode, splitBySnapshot: true).map { e in
             if e.kind == .orphan {
                 let isNoFee = e.code == "不取费" || e.code.contains("不取费") || e.code.contains("预留")
                 return Table3AEntry(
@@ -719,9 +731,9 @@ func table3AEntries(_ ctx: PrintContext) -> [Table3AEntry] {
             }
             let quota = ctx.quotaByCode[e.code]!
             return Table3AEntry(
-                code: e.code, name: displayName(quota, e.variant), unit: quota.unit,
-                qty: r2(e.weighted), techUnit: num(quota.tech), laborUnit: num(quota.labor),
-                tech: r2(e.weighted * num(quota.tech)), labor: r2(e.weighted * num(quota.labor)))
+                code: e.code, name: displayName(quota, e.variant), unit: e.unit,
+                qty: r2(e.weighted), techUnit: e.techUnit, laborUnit: e.laborUnit,
+                tech: r2(e.weighted * e.techUnit), labor: r2(e.weighted * e.laborUnit))
         }
     }
     return ctx.result.table3A.map {
@@ -1044,7 +1056,8 @@ func buildTable4A(_ ctx: PrintContext) -> XlsxSheet {
                 seqNo += 1
                 let remark: String
                 if row.unmatched { remark = "未建档" }
-                else { remark = ctx.libByKey["\(row.name)|\(row.spec)"]?.remark ?? "" }
+                else if !row.remark.isEmpty { remark = row.remark }
+                else { remark = ctx.libByKey[row.key]?.remark ?? "" }
                 b.setNum(r, 1, Double(seqNo), font: fData, alignment: aCenter)
                 b.setText(r, 2, row.name, font: fData, alignment: aLeft)
                 b.setText(r, 3, row.spec, font: fData, alignment: aLeft)

@@ -4,6 +4,9 @@ import SwiftUI
 /// 工作量（v2.4.0）：顶部报表分页一排——表三甲（录入）/ 表三乙 / 表三丙 / 表四材料 / 安装设备。
 /// 表三甲 = 工程量清单（唯一录入页）+ 底部关联区；其余四页为引擎自动生成的只读报表
 /// （工程级修正除外，见 docs/v2.4-workload-design.md）。预览与导出同源同值。
+/// v2.6.0（docs/v2.6-batch-design.md §6/§9）：表三甲条目改快照模型——编号/名称/
+/// 单位/技工/普工/数量/系数逐行可改（改本工程条目，不回写定额库），合计以行值为准；
+/// 条目按添加先后为序，右键可上移/下移、切换型号。
 struct WorkloadView: View {
     @EnvironmentObject private var appState: AppState
     var project: ProjectRecord
@@ -55,11 +58,12 @@ struct WorkloadView: View {
                                 selectedRowKey = ids.count == 1 ? ids.first : nil
                             },
                             onRowDoubleClick: handleRowDoubleClick,
+                            onMoveRow: { id, delta in moveQuantity(dictId: id, delta: delta) },
+                            onVariantPick: { id in handleRowDoubleClick(id) },
                             tableId: "workload-3a",
                             flexibleKey: "variant",
                             flexibleMinWidth: 260,
-                            readOnlyKeys: ["quota", "variant", "unit", "tech", "labor",
-                                           "techTotal", "laborTotal", "status"],
+                            readOnlyKeys: ["techTotal", "laborTotal", "status"],
                             totalsKeys: [],
                             emptyTitle: "尚未录入工程量",
                             emptyMessage: "在上方搜索定额编号或名称，输数量后回车添加第一行。",
@@ -85,12 +89,12 @@ struct WorkloadView: View {
             }
         case "3b":
             VStack(alignment: .leading, spacing: 6) {
-                generatedNote("数据来自定额的机械关联（定额—机械映射 × 工程量）。修改请在表三甲点选工作量后用底部关联区，或去资料库维护。")
+                generatedNote("数据来自定额的机械关联（按定额关联 × 工程量）。修改请在表三甲点选工作量后用底部关联区维护。")
                 WorkloadMachinesView(project: project)
             }
         case "3c":
             VStack(alignment: .leading, spacing: 6) {
-                generatedNote("数据来自定额的仪器仪表关联（定额—仪表映射 × 工程量）。修改请在表三甲点选工作量后用底部关联区，或去资料库维护。")
+                generatedNote("数据来自定额的仪器仪表关联（按定额关联 × 工程量）。修改请在表三甲点选工作量后用底部关联区维护。")
                 WorkloadInstrumentsView(project: project)
             }
         case "mat":
@@ -280,11 +284,11 @@ struct WorkloadView: View {
                 "id": quantityDictId(row, at: i),
                 "quota": row.quota,
                 "variant": row.variant ?? "",
-                "unit": row.unit ?? "",
+                "unit": row.unit ?? quota?.unit ?? "",
                 "qty": row.qty.map { jsNumberString($0) } ?? "",
                 "coef": row.coef.map { jsNumberString($0) } ?? "",
-                "tech": quota.map { num2($0.tech) } ?? "",
-                "labor": quota.map { num2($0.labor) } ?? "",
+                "tech": quota.map { num2(effectiveTech(row, $0)) } ?? "",
+                "labor": quota.map { num2(effectiveLabor(row, $0)) } ?? "",
                 "techTotal": quota == nil ? "" : num2(contribution.tech),
                 "laborTotal": quota == nil ? "" : num2(contribution.labor),
                 "status": quantityRowStatusText(status),
@@ -294,15 +298,54 @@ struct WorkloadView: View {
 
     // MARK: - 操作
 
+    /// 表三甲逐行编辑写回（v2.6.0 §6）：只读列（合计/状态）不入；写入前先把全表
+    /// 快照回填 + 行 id 补齐并落盘（旧工程迁移）；行按字典 id 定位（无 id 行走行序回退）。
+    /// tech/labor 清空 = 清快照回落库值；数字解析失败不改该字段。
     private func commitQuantity(id: String, dict: [String: String]) {
+        let libs = libraries
         appState.updateProject(project.id) { p in
-            guard let i = p.quantities.firstIndex(where: { $0.id == id }) else { return }
+            p.quantities = fillQuantitySnapshots(p.quantities, libraries: libs)
+            p.quantities = ensureQuantityRowIds(p.quantities)
+            guard let i = p.quantities.firstIndex(where: { $0.id == id })
+                ?? (id.hasPrefix("rowidx_")
+                    ? Int(id.dropFirst(7)).flatMap { p.quantities.indices.contains($0) ? $0 : nil }
+                    : nil)
+            else { return }
+            var row = p.quantities[i]
+            if let v = dict["quota"]?.trimmingCharacters(in: .whitespaces), !v.isEmpty {
+                row.quota = v
+            }
+            if let v = dict["variant"] { row.variant = v.isEmpty ? nil : v }
+            if let v = dict["unit"] { row.unit = v.isEmpty ? nil : v }
             if let v = Double((dict["qty"] ?? "").trimmingCharacters(in: .whitespaces)) {
-                p.quantities[i].qty = v
+                row.qty = v
             }
-            if let v = Double((dict["coef"] ?? "").trimmingCharacters(in: .whitespaces)) {
-                p.quantities[i].coef = v
+            if let v = dict["coef"] {
+                let t = v.trimmingCharacters(in: .whitespaces)
+                row.coef = t.isEmpty ? nil : Double(t)
             }
+            if let v = dict["tech"] {
+                let t = v.trimmingCharacters(in: .whitespaces)
+                if t.isEmpty { row.tech = nil } else if let n = Double(t) { row.tech = n }
+            }
+            if let v = dict["labor"] {
+                let t = v.trimmingCharacters(in: .whitespaces)
+                if t.isEmpty { row.labor = nil } else if let n = Double(t) { row.labor = n }
+            }
+            p.quantities[i] = row
+        }
+    }
+
+    /// 表三甲行上移/下移（v2.6.0 §9）：顺序 = quantities 数组序，引擎与导出同源。
+    private func moveQuantity(dictId: String, delta: Int) {
+        appState.updateProject(project.id) { p in
+            p.quantities = ensureQuantityRowIds(p.quantities)
+            guard let i = p.quantities.firstIndex(where: { $0.id == dictId })
+                ?? (dictId.hasPrefix("rowidx_")
+                    ? Int(dictId.dropFirst(7)).flatMap { p.quantities.indices.contains($0) ? $0 : nil }
+                    : nil)
+            else { return }
+            p.quantities = moveQuantityRow(p.quantities, at: i, delta: delta)
         }
     }
 
@@ -358,7 +401,7 @@ struct QuotaAddBar: View {
             Button("添加") { doAdd() }
                 .buttonStyle(.borderedProminent)
                 .disabled(picked == nil)
-            Text("选定额 → 输数量 → 回车添加；双击数量/系数可改，双击行可选型号。")
+            Text("选定额 → 输数量 → 回车添加；除合计/状态外每行字段都可双击改，右键可切换型号、上移/下移。")
                 .foregroundColor(.secondary).font(.caption)
             Spacer()
         }
@@ -396,7 +439,8 @@ struct QuotaAddBar: View {
         let qty = Double(addQty.trimmingCharacters(in: .whitespaces)) ?? 0
         appState.updateProject(project.id) { p in
             p.quantities.append(QuantityRow(id: newUID(), quota: picked.code, variant: picked.name,
-                                            unit: picked.unit, qty: qty, coef: picked.coef ?? 1))
+                                            unit: picked.unit, qty: qty, coef: picked.coef ?? 1,
+                                            tech: picked.tech, labor: picked.labor))
         }
         keyword = ""
         self.picked = nil
@@ -471,7 +515,8 @@ struct QuotaPickerSheet: View {
         let qty = Double(qtyText.trimmingCharacters(in: .whitespaces)) ?? 1
         appState.updateProject(project.id) { p in
             p.quantities.append(QuantityRow(id: newUID(), quota: picked.code, variant: picked.name,
-                                            unit: picked.unit, qty: qty, coef: picked.coef ?? 1))
+                                            unit: picked.unit, qty: qty, coef: picked.coef ?? 1,
+                                            tech: picked.tech, labor: picked.labor))
         }
         appState.nav = .workload
         appState.showToast("已加入工程量：\(picked.code) × \(jsNumberString(qty))")

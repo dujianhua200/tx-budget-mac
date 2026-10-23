@@ -86,7 +86,7 @@ public func collectValidationIssues(db: DbFile, project: ProjectRecord,
             issues.append(ValidationIssue(
                 id: "unmatched-\(label)", severity: .warning,
                 title: "\(label)有 \(unmatched.count) 项未建档",
-                detail: "材料库中找不到对应材料，单价按 0 计算：\(names)\(unmatched.count > 3 ? " 等" : "")。请到材料库补建档或检查映射规则。",
+                detail: "材料库中找不到对应材料，单价按 0 计算：\(names)\(unmatched.count > 3 ? " 等" : "")。请到材料库补建档或检查定额关联规则。",
                 target: .workload))
         }
     }

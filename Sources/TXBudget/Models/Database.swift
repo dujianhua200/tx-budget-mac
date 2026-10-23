@@ -5,15 +5,23 @@ import Foundation
 
 public struct MetaRecord: Equatable, Codable {
     public var saveVersion: Int
-    public init(saveVersion: Int = 0) { self.saveVersion = saveVersion }
-    enum CodingKeys: String, CodingKey { case saveVersion }
+    /// 已应用的一次性数据迁移标记（v2.6.0 起，如 "cable-unit-m-v26"）；
+    /// 旧文件无此键 → nil（视为空），迁移函数据此保证幂等、不误迁用户后建数据。
+    public var appliedMigrations: [String]?
+    public init(saveVersion: Int = 0, appliedMigrations: [String]? = nil) {
+        self.saveVersion = saveVersion
+        self.appliedMigrations = appliedMigrations
+    }
+    enum CodingKeys: String, CodingKey { case saveVersion, appliedMigrations }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         saveVersion = (try? c.decodeIfPresent(Int.self, forKey: .saveVersion)) ?? 0
+        appliedMigrations = try? c.decodeIfPresent([String].self, forKey: .appliedMigrations)
     }
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(saveVersion, forKey: .saveVersion)
+        try c.encodeIfPresent(appliedMigrations, forKey: .appliedMigrations)
     }
 }
 
@@ -124,6 +132,10 @@ public struct ProjectRecord: Equatable, Codable, Identifiable {
     public var quantities: [QuantityRow]
     public var materialAdjust: [MaterialAdjust]
     public var materialPriceOverrides: [MaterialPriceOverride]
+    /// 工程级材料层（v2.6.0）：生成行覆盖 / 手工行 / 表四行序（旧文件缺失 = 空）。
+    public var materialEdits: [MaterialRowEdit]
+    public var manualMaterials: [ManualMaterialRow]
+    public var materialOrder: [String]
     public var ruleOverrides: [RuleOverride]
     public var rateOverrides: RateOverrides
     public var table5Overrides: [Table5Override]
@@ -131,20 +143,24 @@ public struct ProjectRecord: Equatable, Codable, Identifiable {
     public init(id: String = "", name: String = "", createdAt: String = "", updatedAt: String = "",
                 profileId: String = "", lastOpenedAt: Double? = nil, info: ProjectInfo = ProjectInfo(),
                 quantities: [QuantityRow] = [], materialAdjust: [MaterialAdjust] = [],
-                materialPriceOverrides: [MaterialPriceOverride] = [], ruleOverrides: [RuleOverride] = [],
-                rateOverrides: RateOverrides = RateOverrides(), table5Overrides: [Table5Override] = [],
-                warningsDismissed: [String] = []) {
+                materialPriceOverrides: [MaterialPriceOverride] = [],
+                materialEdits: [MaterialRowEdit] = [], manualMaterials: [ManualMaterialRow] = [],
+                materialOrder: [String] = [],
+                ruleOverrides: [RuleOverride] = [], rateOverrides: RateOverrides = RateOverrides(),
+                table5Overrides: [Table5Override] = [], warningsDismissed: [String] = []) {
         self.id = id; self.name = name; self.createdAt = createdAt; self.updatedAt = updatedAt
         self.profileId = profileId; self.lastOpenedAt = lastOpenedAt; self.info = info
         self.quantities = quantities; self.materialAdjust = materialAdjust
-        self.materialPriceOverrides = materialPriceOverrides; self.ruleOverrides = ruleOverrides
-        self.rateOverrides = rateOverrides; self.table5Overrides = table5Overrides
-        self.warningsDismissed = warningsDismissed
+        self.materialPriceOverrides = materialPriceOverrides
+        self.materialEdits = materialEdits; self.manualMaterials = manualMaterials
+        self.materialOrder = materialOrder
+        self.ruleOverrides = ruleOverrides; self.rateOverrides = rateOverrides
+        self.table5Overrides = table5Overrides; self.warningsDismissed = warningsDismissed
     }
     enum CodingKeys: String, CodingKey {
         case id, name, createdAt, updatedAt, profileId, lastOpenedAt, info, quantities,
-             materialAdjust, materialPriceOverrides, ruleOverrides, rateOverrides,
-             table5Overrides, warningsDismissed
+             materialAdjust, materialPriceOverrides, materialEdits, manualMaterials, materialOrder,
+             ruleOverrides, rateOverrides, table5Overrides, warningsDismissed
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -158,6 +174,9 @@ public struct ProjectRecord: Equatable, Codable, Identifiable {
         quantities = (try? c.decodeIfPresent([QuantityRow].self, forKey: .quantities)) ?? []
         materialAdjust = (try? c.decodeIfPresent([MaterialAdjust].self, forKey: .materialAdjust)) ?? []
         materialPriceOverrides = (try? c.decodeIfPresent([MaterialPriceOverride].self, forKey: .materialPriceOverrides)) ?? []
+        materialEdits = (try? c.decodeIfPresent([MaterialRowEdit].self, forKey: .materialEdits)) ?? []
+        manualMaterials = (try? c.decodeIfPresent([ManualMaterialRow].self, forKey: .manualMaterials)) ?? []
+        materialOrder = (try? c.decodeIfPresent([String].self, forKey: .materialOrder)) ?? []
         ruleOverrides = (try? c.decodeIfPresent([RuleOverride].self, forKey: .ruleOverrides)) ?? []
         rateOverrides = (try? c.decodeIfPresent(RateOverrides.self, forKey: .rateOverrides)) ?? RateOverrides()
         table5Overrides = (try? c.decodeIfPresent([Table5Override].self, forKey: .table5Overrides)) ?? []
@@ -175,6 +194,9 @@ public struct ProjectRecord: Equatable, Codable, Identifiable {
         try c.encode(quantities, forKey: .quantities)
         try c.encode(materialAdjust, forKey: .materialAdjust)
         try c.encode(materialPriceOverrides, forKey: .materialPriceOverrides)
+        try c.encode(materialEdits, forKey: .materialEdits)
+        try c.encode(manualMaterials, forKey: .manualMaterials)
+        try c.encode(materialOrder, forKey: .materialOrder)
         try c.encode(ruleOverrides, forKey: .ruleOverrides)
         try c.encode(rateOverrides, forKey: .rateOverrides)
         try c.encode(table5Overrides, forKey: .table5Overrides)
@@ -184,8 +206,11 @@ public struct ProjectRecord: Equatable, Codable, Identifiable {
     /// 转引擎 Project（calcProject 输入）。
     public func toEngineProject() -> Project {
         Project(info: info, quantities: quantities, materialAdjust: materialAdjust,
-                materialPriceOverrides: materialPriceOverrides, ruleOverrides: ruleOverrides,
-                rateOverrides: rateOverrides, table5Overrides: table5Overrides)
+                materialPriceOverrides: materialPriceOverrides,
+                materialEdits: materialEdits, manualMaterials: manualMaterials,
+                materialOrder: materialOrder,
+                ruleOverrides: ruleOverrides, rateOverrides: rateOverrides,
+                table5Overrides: table5Overrides)
     }
 }
 

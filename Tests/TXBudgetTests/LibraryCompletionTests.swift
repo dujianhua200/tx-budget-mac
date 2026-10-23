@@ -187,7 +187,7 @@ final class LibraryCompletionTests: XCTestCase {
     // MARK: - 内置完整库完整性（官方校正版，与构建脚本产物一致，设计文档 §4）
 
     func testBundledFullLibraryIntegrity() throws {
-        let full = try XCTUnwrap(loadBundledFullLibrary(), "内置完整库必须能经 Bundle.module 加载")
+        let full = try XCTUnwrap(loadBundledFullLibrary(), "内置完整库必须能经显式路径查找加载（v2.5.1 起弃用 Bundle.module）")
         XCTAssertEqual(full.quotas.count, 3092)
         XCTAssertEqual(full.shortlist.count, 0)
         XCTAssertEqual(full.materials.count, 668)

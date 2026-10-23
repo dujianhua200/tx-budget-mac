@@ -22,8 +22,11 @@ public struct Material: Decodable, Equatable {
     public var unit: String
     public var priceExcl: Double
     public var supply: String
-    public init(name: String, spec: String = "", unit: String = "", priceExcl: Double = 0, supply: String = "") {
+    /// 材料库备注（v2.6.0 透传，供表四生效行备注；计算不读）。
+    public var remark: String = ""
+    public init(name: String, spec: String = "", unit: String = "", priceExcl: Double = 0, supply: String = "", remark: String = "") {
         self.name = name; self.spec = spec; self.unit = unit; self.priceExcl = priceExcl; self.supply = supply
+        self.remark = remark
     }
 }
 
@@ -130,10 +133,17 @@ public struct QuantityRow: Equatable {
     public var unit: String?
     public var qty: Double?
     public var coef: Double?
+    /// 单位工日快照（v2.6.0 快照模型，docs/v2.6-batch-design.md §6）：添加定额时
+    /// 把定额库的技工/普工工日快照进条目；非 nil 时引擎与显示一律以行值为准，
+    /// nil = 回落定额库值（旧工程条目）。名称快照 = variant、单位快照 = unit（既有字段）。
+    public var tech: Double?
+    public var labor: Double?
     public init(id: String? = nil, quota: String, variant: String? = nil,
-                unit: String? = nil, qty: Double? = nil, coef: Double? = nil) {
+                unit: String? = nil, qty: Double? = nil, coef: Double? = nil,
+                tech: Double? = nil, labor: Double? = nil) {
         self.id = id; self.quota = quota; self.variant = variant
         self.unit = unit; self.qty = qty; self.coef = coef
+        self.tech = tech; self.labor = labor
     }
 }
 
@@ -147,6 +157,50 @@ public struct MaterialPriceOverride: Equatable {
     public var key: String
     public var priceExcl: Double
     public init(key: String, priceExcl: Double = 0) { self.key = key; self.priceExcl = priceExcl }
+}
+
+/// 工程级材料行覆盖（v2.6.0，docs/v2.6-batch-design.md §5）：对引擎生成行的
+/// 本工程级修改，按生成行身份键 key（原“名称|规格”，改名不改键）定位。
+/// nil 字段 = 不覆盖；deleted = 本工程删除该生成行。不回写资料库。
+public struct MaterialRowEdit: Equatable {
+    public var key: String
+    public var code: String?
+    public var name: String?
+    public var spec: String?
+    public var unit: String?
+    public var supply: String?
+    public var category: String?
+    public var remark: String?
+    public var deleted: Bool
+    public init(key: String, code: String? = nil, name: String? = nil, spec: String? = nil,
+                unit: String? = nil, supply: String? = nil, category: String? = nil,
+                remark: String? = nil, deleted: Bool = false) {
+        self.key = key; self.code = code; self.name = name; self.spec = spec
+        self.unit = unit; self.supply = supply; self.category = category
+        self.remark = remark; self.deleted = deleted
+    }
+}
+
+/// 工程级手工材料行（v2.6.0）：用户在表四直接插入/追加的材料，全记录自持，
+/// 按 supply 入表四甲/乙/设备组，金额公式与生成行一致。不回写资料库。
+public struct ManualMaterialRow: Equatable {
+    public var id: String
+    public var code: String
+    public var name: String
+    public var spec: String
+    public var unit: String
+    public var qty: Double
+    public var priceExcl: Double
+    public var supply: String
+    public var category: String
+    public var remark: String
+    public init(id: String, code: String = "", name: String = "", spec: String = "",
+                unit: String = "", qty: Double = 0, priceExcl: Double = 0,
+                supply: String = "甲供", category: String = "", remark: String = "") {
+        self.id = id; self.code = code; self.name = name; self.spec = spec
+        self.unit = unit; self.qty = qty; self.priceExcl = priceExcl
+        self.supply = supply; self.category = category; self.remark = remark
+    }
 }
 
 public struct RuleOverride: Equatable {
@@ -183,6 +237,11 @@ public struct Project: Equatable {
     public var quantities: [QuantityRow]
     public var materialAdjust: [MaterialAdjust]
     public var materialPriceOverrides: [MaterialPriceOverride]
+    /// 工程级材料层（v2.6.0）：生成行覆盖 / 手工行 / 行序（见 MaterialRowEdit）。
+    public var materialEdits: [MaterialRowEdit]
+    public var manualMaterials: [ManualMaterialRow]
+    /// 表四行序：生成行原 key / 手工行 id 的全局序（甲→乙→设备拼接序的基底）。
+    public var materialOrder: [String]
     public var ruleOverrides: [RuleOverride]
     public var rateOverrides: RateOverrides?
     public var table5Overrides: [Table5Override]
@@ -191,12 +250,16 @@ public struct Project: Equatable {
     public var projectOrdinal: Int = 1
     public init(info: ProjectInfo = ProjectInfo(), quantities: [QuantityRow] = [],
                 materialAdjust: [MaterialAdjust] = [], materialPriceOverrides: [MaterialPriceOverride] = [],
+                materialEdits: [MaterialRowEdit] = [], manualMaterials: [ManualMaterialRow] = [],
+                materialOrder: [String] = [],
                 ruleOverrides: [RuleOverride] = [], rateOverrides: RateOverrides? = nil,
                 table5Overrides: [Table5Override] = [], projectOrdinal: Int = 1) {
         self.info = info; self.quantities = quantities; self.materialAdjust = materialAdjust
-        self.materialPriceOverrides = materialPriceOverrides; self.ruleOverrides = ruleOverrides
-        self.rateOverrides = rateOverrides; self.table5Overrides = table5Overrides
-        self.projectOrdinal = projectOrdinal
+        self.materialPriceOverrides = materialPriceOverrides
+        self.materialEdits = materialEdits; self.manualMaterials = manualMaterials
+        self.materialOrder = materialOrder
+        self.ruleOverrides = ruleOverrides; self.rateOverrides = rateOverrides
+        self.table5Overrides = table5Overrides; self.projectOrdinal = projectOrdinal
     }
 }
 
@@ -550,6 +613,13 @@ public struct Table4Row: Equatable, Identifiable {
     public var amtVat: Double
     public var amtIncl: Double
     public var unmatched: Bool
+    /// 工程级材料层（v2.6.0）：代号（主材一般无代号，覆盖/手工行可填）、类别、
+    /// 备注（生成行 = 材料库备注，覆盖优先）、生效供材分组、是否手工行。
+    public var code: String = ""
+    public var category: String = ""
+    public var remark: String = ""
+    public var supply: String = ""
+    public var isManual: Bool = false
     public init(key: String, name: String, spec: String, unit: String, qty: Double, autoQty: Double,
                 delta: Double, priceExcl: Double, priceVat: Double, priceIncl: Double,
                 amtExcl: Double, amtVat: Double, amtIncl: Double, unmatched: Bool) {
