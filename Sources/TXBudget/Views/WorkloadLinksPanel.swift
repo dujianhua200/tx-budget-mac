@@ -31,7 +31,9 @@ struct WorkloadLinksPanel: View {
 
     private var links: WorkloadRowLinks? {
         guard let row = selectedRow else { return nil }
-        return effectiveLinks(row: row, project: project.toEngineProject(), libraries: libraries)
+        var engineProject = project.toEngineProject()
+        engineProject.projectOrdinal = projectOrdinal(appState.db, project)
+        return effectiveLinks(row: row, project: engineProject, libraries: libraries)
     }
 
     var body: some View {

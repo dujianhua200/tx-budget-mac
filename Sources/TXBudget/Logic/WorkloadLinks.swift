@@ -12,7 +12,9 @@ import Foundation
 ///   备选：variant 精确相等且规则 id 在 project.ruleOverrides 启用时才生效。
 /// - 主材单价 = 材料库价（名称+规格命中，后行覆盖先行，与引擎 matByKey 一致）；
 ///   供货分组：材料库 supply 非空优先，否则规则 supply（与引擎 buildMatTable 一致）。
-/// - appliesTo 引擎不消费，本判定同样不引入（见设计文档 §3.2）。
+/// - appliesTo（v2.4.1）：与引擎共用 `ruleAppliesToProject` 闸门（序号取
+///   project.projectOrdinal，由 calcFor / 面板按同一 projectOrdinal() 注入）；
+///   被挡规则仍列出、合计按 0、灰显给原因（理由见 docs/v2.4.1-appliesto-design.md）。
 
 // MARK: - 行状态
 
@@ -46,10 +48,10 @@ public struct EffectiveMaterialLink: Equatable {
     public var basisQty: Double
     /// 本行贡献的自动数量 = 基数 × 消耗量（不含工程级手动调整）。
     public var totalQty: Double
-    /// 是否实际生效（备选未启用 = false，合计按 0 计入表四——totalQty 已按 0 给出基数时为 0；
-    /// 注意备选未启用时 basisQty 亦为 0，isEffective 仅作展示标记）。
+    /// 是否实际生效（备选未启用 / 适用工程不含本工程 = false，合计按 0 计入表四——
+    /// totalQty 已按 0 给出基数时为 0；注意未生效时 basisQty 亦为 0，isEffective 仅作展示标记）。
     public var isEffective: Bool
-    /// 未生效原因（如“备选未启用”）；生效时为 nil。
+    /// 未生效原因（如“备选未启用”/“适用工程为「1,3」，本工程序号 2，未生效”）；生效时为 nil。
     public var inactiveReason: String?
     /// 材料库命中行下标（libraries.materials）；未建档为 nil。
     public var materialIndex: Int?
@@ -138,7 +140,15 @@ public func effectiveLinks(row: QuantityRow, project: Project, libraries: Librar
         default:
             basis = nil // 引擎对未知 kind 不计入（q 恒 0），面板同样不列。
         }
-        guard let basisQty = basis else { continue }
+        guard let basisQty0 = basis else { continue }
+        // v2.4.1：适用工程闸门（与引擎 Calc 同一纯函数）。与本行相关但被挡的规则
+        // 仍列出：合计按 0、灰显、给原因；与备选未启用同时命中时优先报适用工程。
+        var basisQty = basisQty0
+        if !ruleAppliesToProject(rule.appliesTo, projectOrdinal: project.projectOrdinal) {
+            basisQty = 0
+            effective = false
+            reason = ruleAppliesToInactiveReason(rule.appliesTo, projectOrdinal: project.projectOrdinal)
+        }
         let matIdx = matIndexByKey["\(rule.material)|\(rule.spec)"]
         let mat = matIdx.map { libraries.materials[$0] }
         let price = num(mat?.priceExcl)

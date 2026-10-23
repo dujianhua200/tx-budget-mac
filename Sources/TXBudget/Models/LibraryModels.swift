@@ -122,7 +122,8 @@ public struct RuleRow: Equatable, Codable, Identifiable {
     }
     public func toEngine() -> Rule {
         Rule(id: id.isEmpty ? nil : id, quota: quota, material: material, spec: spec,
-             consumption: consumption, supply: supply, kind: kind, variant: variant)
+             consumption: consumption, supply: supply, kind: kind, variant: variant,
+             appliesTo: appliesTo)
     }
 }
 

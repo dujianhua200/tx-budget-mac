@@ -376,6 +376,9 @@ public func calcProject(_ project: Project, _ libs: Libs) -> CalcResult {
     for rule in rules {
         // 孤儿定额的规则不参与计算（其工程量行已排除）。
         guard quotaByCode[rule.quota] != nil else { continue }
+        // v2.4.1：适用工程过滤（'' = 不启用，'全' = 全部，'1,3' = 仅对应序号工程；
+        // 序号 = 工程在所属方案工程集合中的 1 基位置，由 calcFor 注入 projectOrdinal）。
+        guard ruleAppliesToProject(rule.appliesTo, projectOrdinal: project.projectOrdinal) else { continue }
         var q = 0.0
         if rule.kind == "变体" {
             q = num(byVariant["\(rule.quota)|\(rule.variant)"])

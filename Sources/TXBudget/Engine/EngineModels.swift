@@ -36,10 +36,14 @@ public struct Rule: Decodable, Equatable {
     public var supply: String
     public var kind: String
     public var variant: String
+    /// 适用工程（v2.4.1 起引擎消费，语义见 docs/v2.4.1-appliesto-design.md）。
+    public var appliesTo: String = "全"
     public init(id: String? = nil, quota: String, material: String, spec: String = "",
-                consumption: Double = 0, supply: String = "", kind: String = "", variant: String = "") {
+                consumption: Double = 0, supply: String = "", kind: String = "", variant: String = "",
+                appliesTo: String = "全") {
         self.id = id; self.quota = quota; self.material = material; self.spec = spec
         self.consumption = consumption; self.supply = supply; self.kind = kind; self.variant = variant
+        self.appliesTo = appliesTo
     }
 }
 
@@ -182,13 +186,17 @@ public struct Project: Equatable {
     public var ruleOverrides: [RuleOverride]
     public var rateOverrides: RateOverrides?
     public var table5Overrides: [Table5Override]
+    /// 工程序号（1 基）：工程在所属方案工程集合中的位置，供规则 appliesTo 过滤
+    /// （v2.4.1）。由 calcFor 注入；直接构造时默认 1。
+    public var projectOrdinal: Int = 1
     public init(info: ProjectInfo = ProjectInfo(), quantities: [QuantityRow] = [],
                 materialAdjust: [MaterialAdjust] = [], materialPriceOverrides: [MaterialPriceOverride] = [],
                 ruleOverrides: [RuleOverride] = [], rateOverrides: RateOverrides? = nil,
-                table5Overrides: [Table5Override] = []) {
+                table5Overrides: [Table5Override] = [], projectOrdinal: Int = 1) {
         self.info = info; self.quantities = quantities; self.materialAdjust = materialAdjust
         self.materialPriceOverrides = materialPriceOverrides; self.ruleOverrides = ruleOverrides
         self.rateOverrides = rateOverrides; self.table5Overrides = table5Overrides
+        self.projectOrdinal = projectOrdinal
     }
 }
 

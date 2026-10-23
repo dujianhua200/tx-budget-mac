@@ -43,11 +43,26 @@ public func resolveEditingProfile(_ db: DbFile) -> ConfigurationProfile? {
     return getProfile(db, id)
 }
 
+/// 工程序号（v2.4.1，docs/v2.4.1-appliesto-design.md §3.1）：工程在“有效方案与
+/// 本工程相同”的工程集合中的 1 基位置（按 db.projects 存储顺序；有效方案的解析
+/// 与 calcFor 一致）。工程不在 db.projects 中时返回 1（如取费页的示例工程）。
+public func projectOrdinal(_ db: DbFile, _ project: ProjectRecord) -> Int {
+    func effectiveProfileId(_ p: ProjectRecord) -> String? {
+        (getProfile(db, p.profileId) ?? activeProfile(db))?.id
+    }
+    guard let targetId = effectiveProfileId(project) else { return 1 }
+    let peers = db.projects.filter { effectiveProfileId($0) == targetId }
+    guard let idx = peers.firstIndex(where: { $0.id == project.id }) else { return 1 }
+    return idx + 1
+}
+
 /// 计算一个工程（对照 Electron `calcFor`）：按工程 profileId 取方案，回落激活方案。
 public func calcFor(_ db: DbFile, _ project: ProjectRecord) -> CalcResult? {
     guard let profile = getProfile(db, project.profileId) ?? activeProfile(db),
           let libs = profileToLibs(profile) else { return nil }
-    return calcProject(project.toEngineProject(), libs)
+    var engineProject = project.toEngineProject()
+    engineProject.projectOrdinal = projectOrdinal(db, project)
+    return calcProject(engineProject, libs)
 }
 
 /// 空白方案（对照 Electron `createProfile` 无种子分支）。
