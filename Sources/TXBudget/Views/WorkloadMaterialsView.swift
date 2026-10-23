@@ -1,8 +1,9 @@
 #if os(macOS)
 import SwiftUI
 
-/// 工作量 · 材料汇总（表四甲：甲供 / 乙供 / 设备三组）+ 备选材料勾选。
-/// 数量 = 自动计算 ＋ 手动调整；单价为本工程单价（改这里只影响本工程）。
+/// 工作量 · 表四材料（v2.4.0 改名，原“材料汇总”）：表四甲（甲供）/ 表四乙（乙供）+ 备选材料勾选。
+/// 设备组已移交“安装设备”页独占。数量 = 定额关联自动计算 ＋ 本工程手动调整；
+/// 关联与库价的修改在源头（表三甲底部关联区 / 资料库），本页只保留工程级修正。
 struct WorkloadMaterialsView: View {
     @EnvironmentObject private var appState: AppState
     var project: ProjectRecord
@@ -10,12 +11,11 @@ struct WorkloadMaterialsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Text("数量 = 自动计算 ＋ 手动调整；单价为本工程单价（改这里只影响本工程，到“基础库 → 材料库”改全局默认价）。备选材料默认不计，在下方勾选启用。")
+                Text("自动生成，只读溯源：数量由定额的主材关联按消耗量 × 工程量自动计算（在表三甲点选工作量，用底部关联区可看可改）。本页可改的只有工程级修正——手动调整量与本工程单价（只影响本工程；改库价与关联请去关联区或资料库）。备选材料默认不计，在下方勾选启用。")
                     .foregroundColor(.secondary).font(.caption)
                 if let result = appState.calcResult(for: project) {
                     MatTableView(title: "甲供主材（表四甲）", table: result.table4A, project: project)
                     MatTableView(title: "乙供主材（表四乙）", table: result.table4B, project: project)
-                    MatTableView(title: "设备（表四甲设备）", table: result.table4Equip, project: project)
                     alternateRulesView(result: result)
                 } else {
                     Text("计算失败。").foregroundColor(.secondary)
@@ -78,7 +78,7 @@ struct WorkloadEquipView: View {
     }
 }
 
-/// 材料表（表四甲结构，复用于材料汇总三组 / 安装设备子集）。
+/// 材料表（表四甲结构，复用于表四材料甲供/乙供两组 / 安装设备子集）。
 /// 列：名称 / 规格 / 单位 / 自动数量 / 手动调整 / 数量 / 除税单价 / 增值税/单位 / 含税单价 / 合计（除税 / 增值税）。
 /// 注：TableBuilder 最多 10 列，除税合计与增值税合计合并为一列展示。
 struct MatTableView: View {

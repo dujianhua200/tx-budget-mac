@@ -17,6 +17,8 @@ struct ProTable: View {
     var onDelete: ((Set<String>) -> Void)? = nil
     /// 复制行回调（按行 id）。
     var onDuplicate: ((String) -> Void)? = nil
+    /// 选择变化回调（v2.4.0 工作量关联区用；默认 nil，其他使用方不受影响）。
+    var onSelectionChange: ((Set<String>) -> Void)? = nil
     /// 不可编辑的列 key（显示为纯文本）。
     var readOnlyKeys: Set<String> = []
     /// 整体只读（预览模式：无新增/删除/编辑，仅搜索与排序）。
@@ -115,6 +117,7 @@ struct ProTable: View {
                 totalsRow
             }
         }
+        .onChange(of: selection) { newValue in onSelectionChange?(newValue) }
         .alert("删除选中的 \(pendingDelete.count) 条？", isPresented: $showDeleteConfirm) {
             Button("取消", role: .cancel) { pendingDelete.removeAll() }
             Button("确认删除", role: .destructive) {

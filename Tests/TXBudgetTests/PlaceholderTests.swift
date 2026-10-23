@@ -3,6 +3,6 @@ import XCTest
 
 final class PlaceholderTests: XCTestCase {
     func testVersion() {
-        XCTAssertEqual(TXBudget.version, "2.3.0")
+        XCTAssertEqual(TXBudget.version, "2.4.0")
     }
 }

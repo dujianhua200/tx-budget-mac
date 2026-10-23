@@ -1,24 +1,43 @@
 #if os(macOS)
 import SwiftUI
 
-/// 工作量（一处录入，v2.0.0）：左 = 工程量清单（ProTable），右 = 自动生成结果预览标签。
-/// 用户只做“录工程量”一个动作：表三甲/乙/丙、材料汇总、安装设备全部由引擎自动联动，
-/// 预览与导出同源同值（docs/v2-ui-design.md §3）。
+/// 工作量（v2.4.0）：顶部报表分页一排——表三甲（录入）/ 表三乙 / 表三丙 / 表四材料 / 安装设备。
+/// 表三甲 = 工程量清单（唯一录入页）+ 底部关联区；其余四页为引擎自动生成的只读报表
+/// （工程级修正除外，见 docs/v2.4-workload-design.md）。预览与导出同源同值。
 struct WorkloadView: View {
     @EnvironmentObject private var appState: AppState
     var project: ProjectRecord
-    @State private var previewTab = "3a"
+    @State private var page = "3a"
+    @State private var selectedRowKey: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             PageHeader(title: "工作量",
-                       subtitle: "录入工程量后，表三甲 / 表三乙 / 表三丙 / 材料汇总自动生成（与导出一致）")
+                       subtitle: "工作量就是表三：在表三甲录入工程量，表三乙 / 表三丙 / 表四材料自动生成；在表三甲点选一行，可在底部关联区查看并修改它要用到的主材、机械、仪器仪表")
             statsStrip
             QuotaAddBar(project: project)
             warningBanners
-            HSplitView {
+            Picker("", selection: $page) {
+                Text("表三甲").tag("3a")
+                Text("表三乙").tag("3b")
+                Text("表三丙").tag("3c")
+                Text("表四材料").tag("mat")
+                Text("安装设备").tag("equip")
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            pageContent
+        }
+        .padding(Theme.pagePadding)
+    }
+
+    @ViewBuilder
+    private var pageContent: some View {
+        switch page {
+        case "3a":
+            VSplitView {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("工程量清单（\(project.quantities.count) 行）")
+                    Text("表三甲 · 工程量清单（\(project.quantities.count) 行）")
                         .font(.headline)
                     ProTable(
                         columns: quantityColumns,
@@ -29,6 +48,9 @@ struct WorkloadView: View {
                                 p.quantities.removeAll { $0.id.map { ids.contains($0) } ?? false }
                             }
                         },
+                        onSelectionChange: { ids in
+                            selectedRowKey = ids.count == 1 ? ids.first : nil
+                        },
                         readOnlyKeys: ["quota", "variant", "unit", "status"],
                         totalsKeys: [],
                         emptyTitle: "尚未录入工程量",
@@ -36,12 +58,44 @@ struct WorkloadView: View {
                         columnWidths: ["quota": 104, "variant": 200, "unit": 52, "status": 92]
                     )
                 }
-                .frame(minWidth: 440)
-                previewPane
-                    .frame(minWidth: 380)
+                .frame(minHeight: 180)
+                WorkloadLinksPanel(project: project, selectedRow: selectedQuantityRow)
+                    .frame(minHeight: 200, idealHeight: 260)
+            }
+        case "3b":
+            VStack(alignment: .leading, spacing: 6) {
+                generatedNote("数据来自定额的机械关联（定额—机械映射 × 工程量）。修改请在表三甲点选工作量后用底部关联区，或去资料库维护。")
+                WorkloadMachinesView(project: project)
+            }
+        case "3c":
+            VStack(alignment: .leading, spacing: 6) {
+                generatedNote("数据来自定额的仪器仪表关联（定额—仪表映射 × 工程量）。修改请在表三甲点选工作量后用底部关联区，或去资料库维护。")
+                WorkloadInstrumentsView(project: project)
+            }
+        case "mat":
+            WorkloadMaterialsView(project: project)
+        default:
+            VStack(alignment: .leading, spacing: 6) {
+                generatedNote("表四甲中的设备组（supply = 设备），与表四材料同源生成；改关联在表三甲底部关联区，改本工程数量/单价在本页。")
+                WorkloadEquipView(project: project)
             }
         }
-        .padding(Theme.pagePadding)
+    }
+
+    private func generatedNote(_ text: String) -> some View {
+        Text("自动生成，只读。\(text)")
+            .font(.caption).foregroundColor(.secondary)
+    }
+
+    /// 当前在清单中单选的工程量行（按清单字典 id 解析，含无 id 行的行序回退 id）。
+    private var selectedQuantityRow: QuantityRow? {
+        guard let key = selectedRowKey else { return nil }
+        return project.quantities.enumerated()
+            .first { quantityDictId($0.element, at: $0.offset) == key }?.element
+    }
+
+    private func quantityDictId(_ row: QuantityRow, at index: Int) -> String {
+        row.id ?? "rowidx_\(index)"
     }
 
     // MARK: - 顶部统计条
@@ -84,47 +138,6 @@ struct WorkloadView: View {
                 Button("忽略") { dismissWarning("invalidQty") }
                 Spacer()
             }.font(.caption)
-        }
-    }
-
-    // MARK: - 右侧预览
-
-    private var previewPane: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("自动生成预览").font(.headline)
-                Spacer()
-                Picker("", selection: $previewTab) {
-                    Text("表三甲").tag("3a")
-                    Text("表三乙").tag("3b")
-                    Text("表三丙").tag("3c")
-                    Text("材料汇总").tag("mat")
-                    Text("安装设备").tag("equip")
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 340)
-            }
-            switch previewTab {
-            case "3a":
-                ProTable(
-                    columns: table3AColumns,
-                    rows: table3ADicts,
-                    readOnly: true,
-                    totalsKeys: ["tech", "labor"],
-                    emptyTitle: "暂无表三甲数据",
-                    emptyMessage: "录入工程量后自动生成。",
-                    columnWidths: ["code": 100, "name": 190, "unit": 50]
-                )
-            case "3b":
-                WorkloadMachinesView(project: project)
-            case "3c":
-                WorkloadInstrumentsView(project: project)
-            case "mat":
-                WorkloadMaterialsView(project: project)
-            default:
-                WorkloadEquipView(project: project)
-            }
         }
     }
 
@@ -177,42 +190,17 @@ struct WorkloadView: View {
     }
 
     private var quantityDicts: [[String: String]] {
-        project.quantities.map { row in
+        project.quantities.enumerated().map { i, row in
             let status = quantityRowStatus(row, orphanIds: orphanIds, invalidIds: invalidIds,
                                            duplicateCodes: duplicateCodes)
             return [
-                "id": row.id ?? "",
+                "id": quantityDictId(row, at: i),
                 "quota": row.quota,
                 "variant": row.variant ?? "",
                 "unit": row.unit ?? "",
                 "qty": row.qty.map { jsNumberString($0) } ?? "",
                 "coef": row.coef.map { jsNumberString($0) } ?? "",
                 "status": quantityRowStatusText(status),
-            ]
-        }
-    }
-
-    private var table3AColumns: [LibraryColumn] {
-        [
-            LibraryColumn(key: "code", label: "定额编号", kind: .text),
-            LibraryColumn(key: "name", label: "项目名称", kind: .text),
-            LibraryColumn(key: "unit", label: "单位", kind: .text),
-            LibraryColumn(key: "qty", label: "数量", kind: .number),
-            LibraryColumn(key: "tech", label: "技工工日", kind: .number),
-            LibraryColumn(key: "labor", label: "普工工日", kind: .number),
-        ]
-    }
-
-    private var table3ADicts: [[String: String]] {
-        (result?.table3A ?? []).enumerated().map { i, r in
-            [
-                "id": "t3a-\(i)",
-                "code": r.code,
-                "name": r.name,
-                "unit": r.unit,
-                "qty": jsNumberString(r.qty),
-                "tech": jsNumberString(r.tech),
-                "labor": jsNumberString(r.labor),
             ]
         }
     }
