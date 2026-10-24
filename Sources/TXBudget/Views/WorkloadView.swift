@@ -72,11 +72,12 @@ struct WorkloadView: View {
                                            "techTotal": 88, "laborTotal": 88, "status": 92]
                         )
                     }
-                    .frame(minHeight: 180)
+                    .frame(minHeight: 130)
                     WorkloadLinksPanel(project: project, selectedRow: selectedQuantityRow)
-                        .frame(minHeight: 200, idealHeight: 260)
+                        .frame(minHeight: 150, idealHeight: 260)
                 }
                 table3ASummaryBar
+                    .layoutPriority(1)
             }
             .sheet(isPresented: $showVariantPicker) {
                 if let target = variantTarget {
@@ -181,12 +182,12 @@ struct WorkloadView: View {
 
     // MARK: - 顶部统计条
 
+    // MARK: - 顶部统计条（v2.6.1 §11.4 去重：总造价与工日只在状态栏/
+    // 汇总条出现，页顶只留建安费两项——一页内同一数字只出现一次）
     private var statsStrip: some View {
         HStack(spacing: 22) {
             statItem("建安费（除税）", money(result?.table2After.exclTax) + " 元")
             statItem("建安费（含税）", money(result?.table2After.inclTax) + " 元")
-            statItem("总造价（含税）", money(result?.table1.grandIncl) + " 元")
-            statItem("工日 技/普", "\(num2(result?.techDays)) / \(num2(result?.laborDays))")
             Spacer()
         }
         .font(.callout)

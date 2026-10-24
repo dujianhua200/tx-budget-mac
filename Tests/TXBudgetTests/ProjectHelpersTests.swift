@@ -59,7 +59,7 @@ final class ProjectHelpersTests: XCTestCase {
         let hits = quotaSuggestions(libs, "TXL1")
         // 短单在前；同 code+name 去重（全库重复项不重复出现）。
         XCTAssertEqual(hits.map { $0.code }, ["TXL1-001", "TXL1-002"])
-        XCTAssertEqual(hits.first?.tech, 0) // 短单转 QuotaRow 时工日为 0
+        XCTAssertEqual(hits.first?.tech, 2) // v2.6.1：短单转 QuotaRow 时工日按 code 回查定额库
         XCTAssertTrue(quotaSuggestions(libs, "  ").isEmpty)
         XCTAssertTrue(quotaSuggestions(libs, "不存在").isEmpty)
         // limit 生效。

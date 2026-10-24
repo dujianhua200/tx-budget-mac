@@ -91,6 +91,10 @@ public struct DatabaseStore {
         var out = db
         // v2.6.0 一次性数据迁移（幂等，标记存 meta.appliedMigrations）。
         _ = migrateCableMaterialUnits(&out)
+        // v2.6.1：基准行变体补齐 + 零快照修复（同模式，电缆迁移之后跑，
+        // 复制的规则直接继承已换算的消耗量）。
+        _ = migrateBaselineVariantRules(&out)
+        _ = migrateZeroSnapshots(&out)
         if out.configurationProfiles.isEmpty {
             // 空方案列表属于损坏数据，由调用方按 missingProfiles 处理。
             return out
@@ -310,6 +314,8 @@ public struct DatabaseStore {
         }
         var p = file.profile
         guard !p.name.isEmpty else { throw DatabaseError.patchError("方案缺少 name") }
+        // v2.6.1：导入的旧方案文件也跑一次基准补齐（天然幂等，无需标记）。
+        _ = repairBaselineVariantRules(in: &p.libraries)
         let ts = nowISO()
         p.id = newUID()
         p.source = "imported"

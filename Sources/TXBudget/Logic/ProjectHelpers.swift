@@ -49,15 +49,25 @@ public func switchProjectProfile(_ project: ProjectRecord, _ profileId: String) 
     return next
 }
 
-// MARK: - 定额联想
+/// 计算缓存键（v2.6.1 §11.3）：任一维度变化即失效；写路径必 bump
+/// saveVersion / updatedAt，纯视图 @State 变化不触缓存。
+public func calcCacheKey(generation: Int, saveVersion: Int, projectId: String, updatedAt: String) -> String {
+    "\(generation)|\(saveVersion)|\(projectId)|\(updatedAt)"
+}
 
 /// 定额编号联想：常用短单在前、全库在后，按 code+name 去重，上限 50。
 public func quotaSuggestions(_ libraries: LibrarySet, _ keyword: String, limit: Int = 50) -> [QuotaRow] {
     let kw = keyword.trimmingCharacters(in: .whitespaces)
     guard !kw.isEmpty else { return [] }
-    // 常用短单（shortlist）按 code+name 匹配，转为 QuotaRow（coef 保留）。
+    // 常用短单（shortlist）按 code+name 匹配，转为 QuotaRow（coef 保留）；
+    // 工日快照必须按 code 回查定额库（v2.6.1：此前硬编码 0/0 导致短单变体行
+    // 工日恒为 0，见 docs/v2.6-batch-design.md §11.2）。
+    let quotaByCode: [String: QuotaRow] = Dictionary(
+        libraries.quotas.map { ($0.code, $0) }, uniquingKeysWith: { first, _ in first })
     let inShort = libraries.shortlist.filter { $0.code.contains(kw) || $0.name.contains(kw) }
-        .map { QuotaRow(id: $0.id, code: $0.code, name: $0.name, unit: $0.unit, tech: 0, labor: 0, coef: $0.coef) }
+        .map { QuotaRow(id: $0.id, code: $0.code, name: $0.name, unit: $0.unit,
+                        tech: quotaByCode[$0.code]?.tech ?? 0,
+                        labor: quotaByCode[$0.code]?.labor ?? 0, coef: $0.coef) }
     var seen = Set(inShort.map { "\($0.code)|\($0.name)" })
     var inFull: [QuotaRow] = []
     for q in libraries.quotas where (q.code.contains(kw) || q.name.contains(kw)) && !seen.contains("\(q.code)|\(q.name)") {

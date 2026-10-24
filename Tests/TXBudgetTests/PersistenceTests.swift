@@ -109,8 +109,11 @@ final class PersistenceTests: XCTestCase {
         let loaded = try DatabaseStore.load(from: url)
         // v2.6.0：load 走 repair 会给旧格式文件打上一次性迁移标记
         // （meta.appliedMigrations），除此之外往返逐项一致。
+        // v2.6.1：repair 另跑基准补齐 + 零快照迁移，期望值同步补齐三标记。
         var expected = db
         _ = migrateCableMaterialUnits(&expected)
+        _ = migrateBaselineVariantRules(&expected)
+        _ = migrateZeroSnapshots(&expected)
         XCTAssertEqual(loaded, expected)
         // 无 tmp 残留。
         let files = try FileManager.default.contentsOfDirectory(atPath: dir.path)

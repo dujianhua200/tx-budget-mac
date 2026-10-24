@@ -348,7 +348,8 @@ struct ProTable: View {
             ProCellField(
                 initial: value,
                 isNumber: col.kind == .number,
-                onCommit: { newValue in commitEdit(wrap: wrap, col: col, newValue: newValue) },
+                onCommit: { newValue in commitEdit(wrap: wrap, col: col, newValue: newValue, advance: false) },
+                onCommitNext: { newValue in commitEdit(wrap: wrap, col: col, newValue: newValue, advance: true) },
                 onCancel: { editing = nil }
             )
         } else {
@@ -415,12 +416,13 @@ struct ProTable: View {
         editing = EditingCell(rowId: wrap.id, key: col.key)
     }
 
-    private func commitEdit(wrap: RowWrap, col: LibraryColumn, newValue: String) {
+    private func commitEdit(wrap: RowWrap, col: LibraryColumn, newValue: String, advance: Bool) {
         if newValue != (wrap.dict[col.key] ?? "") {
             var d = wrap.dict
             d[col.key] = newValue
             onCommit(wrap.id, d)
         }
+        if !advance { editing = nil; return }
         // 回车提交后跳下一行同列继续编辑（快速录入）；没有下一行则收起。
         let list = visibleRows
         if let idx = list.firstIndex(where: { $0.id == wrap.id }), idx + 1 < list.count {
@@ -498,11 +500,14 @@ struct ProTable: View {
     }
 }
 
-/// 单元格编辑器：本地文本，回车提交、Esc 取消、失焦提交（只提交一次）。
+/// 单元格编辑器：本地文本，Esc 取消；回车提交并推进下一行（onCommitNext），
+/// 失焦提交仅提交并退出（onCommit，不推进——v2.6.1 §11.3：编辑中单击其他行
+/// 时首击不再被“跳下一行”吃掉）；只提交一次。
 struct ProCellField: View {
     var initial: String
     var isNumber: Bool
     var onCommit: (String) -> Void
+    var onCommitNext: ((String) -> Void)? = nil
     var onCancel: () -> Void
 
     @State private var text = ""
@@ -519,17 +524,23 @@ struct ProCellField: View {
                 text = initial
                 focused = true
             }
-            .onSubmit { finish(commit: true) }
-            .onExitCommand { finish(commit: false) }
+            .onSubmit { finish(commit: .next) }
+            .onExitCommand { finish(commit: .cancel) }
             .onChange(of: focused) { f in
-                if !f { finish(commit: true) }
+                if !f { finish(commit: .plain) }
             }
     }
 
-    private func finish(commit: Bool) {
+    private enum CommitKind { case plain, next, cancel }
+
+    private func finish(commit: CommitKind) {
         guard !finished else { return }
         finished = true
-        if commit { onCommit(text) } else { onCancel() }
+        switch commit {
+        case .plain: onCommit(text)
+        case .next: (onCommitNext ?? onCommit)(text)
+        case .cancel: onCancel()
+        }
     }
 }
 

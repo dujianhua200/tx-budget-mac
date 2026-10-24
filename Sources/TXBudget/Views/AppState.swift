@@ -7,7 +7,15 @@ import Combine
 /// 保存：updateDb 只改内存并标记 dirty，800ms 节流聚合后自动写盘；显式保存按钮排空队列立即写盘。
 @MainActor
 final class AppState: ObservableObject {
-    @Published var db: DbFile
+    @Published var db: DbFile {
+        didSet { dbGeneration += 1 }
+    }
+    /// db 内容代数（每次赋值递增）：计算缓存失效口径之一，防外部重载后
+    /// saveVersion 相同但内容已变时命中旧缓存（v2.6.1 §11.3）。
+    private var dbGeneration = 0
+    /// 最近一次 calcResult 缓存（键见 calcCacheKey；写路径必 bump
+    /// saveVersion / updatedAt，故纯视图 @State 变化零重算）。
+    private var calcCache: (key: String, result: CalcResult?)?
     @Published var nav: NavDestination = .projectList
     @Published var openProjectId: String?
     @Published var saveState = SaveStatus.initial()
@@ -95,7 +103,12 @@ final class AppState: ObservableObject {
     var hasProject: Bool { openProject != nil }
 
     func calcResult(for project: ProjectRecord) -> CalcResult? {
-        calcFor(db, project)
+        let key = calcCacheKey(generation: dbGeneration, saveVersion: db.meta.saveVersion,
+                               projectId: project.id, updatedAt: project.updatedAt)
+        if let cached = calcCache, cached.key == key { return cached.result }
+        let result = calcFor(db, project)
+        calcCache = (key, result)
+        return result
     }
 
     /// 当前打开工程的全部校验问题（校验中心 / 状态栏徽标 / 概览共用同一聚合）。
